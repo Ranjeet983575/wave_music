@@ -7,6 +7,8 @@ export const DEFAULT_EQ_LEVELS = [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6,
 
 export const DEFAULT_PLAYBACK_SETTINGS = {
     autoPlayNext: true,
+    shuffleEnabled: false,
+    repeatAllEnabled: false,
     pitchCorrection: true,
     hapticsEnabled: true,
     playbackRate: 1,
@@ -37,6 +39,8 @@ function normalizeSettings(input) {
 
     return {
         autoPlayNext: typeof value.autoPlayNext === 'boolean' ? value.autoPlayNext : DEFAULT_PLAYBACK_SETTINGS.autoPlayNext,
+        shuffleEnabled: typeof value.shuffleEnabled === 'boolean' ? value.shuffleEnabled : DEFAULT_PLAYBACK_SETTINGS.shuffleEnabled,
+        repeatAllEnabled: typeof value.repeatAllEnabled === 'boolean' ? value.repeatAllEnabled : DEFAULT_PLAYBACK_SETTINGS.repeatAllEnabled,
         pitchCorrection: typeof value.pitchCorrection === 'boolean' ? value.pitchCorrection : DEFAULT_PLAYBACK_SETTINGS.pitchCorrection,
         hapticsEnabled: typeof value.hapticsEnabled === 'boolean' ? value.hapticsEnabled : DEFAULT_PLAYBACK_SETTINGS.hapticsEnabled,
         playbackRate: PLAYBACK_RATES.includes(value.playbackRate) ? value.playbackRate : DEFAULT_PLAYBACK_SETTINGS.playbackRate,

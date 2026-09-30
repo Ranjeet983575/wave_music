@@ -28,6 +28,7 @@ import {
 import { DEFAULT_EQ_LEVELS, DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
 import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceSettings, saveAppearanceSettings } from '../../data/appearanceSettings';
 import { ACCENT_COLORS, APP_THEME, LIGHT_THEME } from '../../constants/theme';
+import WaveformVisualizer from '../../components/WaveformVisualizer';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
 const C = APP_THEME;
@@ -282,14 +283,15 @@ export default function PlayerScreen() {
             return;
         }
         if (!activeTrack || completedTrackRef.current === activeTrack.id) return;
-        completedTrackRef.current = activeTrack.id;
-        if (!advancedSettings.autoPlayNext) return;
         const source = queue.length ? queue : tracks;
         const currentIndex = source.findIndex((track) => track.id === activeTrack.id);
-        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % source.length;
-        if (source.length) completedTrackRef.current = source[nextIndex].id;
-        playNext(1);
-    }, [activeTrack, advancedSettings.autoPlayNext, queue, status.didJustFinish, tracks]);
+        const canAdvance = advancedSettings.shuffleEnabled
+            ? source.length > 1
+            : currentIndex >= 0 && currentIndex < source.length - 1;
+        if (!advancedSettings.repeatAllEnabled && !(advancedSettings.autoPlayNext && canAdvance)) return;
+        const nextTrack = playNext(1);
+        completedTrackRef.current = nextTrack?.id || activeTrack.id;
+    }, [activeTrack, advancedSettings.autoPlayNext, advancedSettings.repeatAllEnabled, advancedSettings.shuffleEnabled, queue, status.didJustFinish, tracks]);
 
     async function scanLibrary() {
         setLoading(true);
@@ -379,10 +381,22 @@ export default function PlayerScreen() {
 
     function playNext(direction = 1) {
         const source = queue.length ? queue : tracks;
-        if (!source.length) return;
+        if (!source.length) return null;
         const currentIndex = source.findIndex((track) => track.id === activeTrack?.id);
-        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + direction + source.length) % source.length;
-        playTrack(source[nextIndex], source);
+        let nextIndex;
+        if (direction > 0 && advancedSettings.shuffleEnabled && source.length > 1) {
+            const candidates = source.map((_, index) => index).filter((index) => index !== currentIndex);
+            nextIndex = candidates[Math.floor(Math.random() * candidates.length)];
+        } else {
+            nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : source.length - 1) : currentIndex + direction;
+        }
+        if (nextIndex < 0 || nextIndex >= source.length) {
+            if (!advancedSettings.repeatAllEnabled) return null;
+            nextIndex = (nextIndex + source.length) % source.length;
+        }
+        const nextTrack = source[nextIndex];
+        playTrack(nextTrack, source);
+        return nextTrack;
     }
 
     async function toggleFavorite(track) {
@@ -967,12 +981,35 @@ export default function PlayerScreen() {
                     </Pressable>
                     <IconButton name="play-skip-forward" size={26} color={C.secondary} onPress={() => playNext(1)} accessibilityLabel="Next track" />
                 </View>
+                <View style={styles.waveformBand}>
+                    <WaveformVisualizer playing={status.playing} accent={accent} />
+                </View>
                 <View style={styles.nowFooter}>
                     <Pressable onPress={() => setShowQueue(true)} style={styles.footerControl} accessibilityRole="button" accessibilityLabel="Show playback queue">
                         <Ionicons name="list-outline" size={19} color={C.secondary} />
                     </Pressable>
-                    <Pressable onPress={() => setShowQueue(true)} accessibilityRole="button" accessibilityLabel="Show playback queue">
-                        <Text style={styles.nowFooterText}>{queue.length || tracks.length} tracks in queue</Text>
+                    <Pressable
+                        onPress={() => updateAdvancedSetting('shuffleEnabled', !advancedSettings.shuffleEnabled)}
+                        style={styles.repeatControl}
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: advancedSettings.shuffleEnabled }}
+                        accessibilityLabel={advancedSettings.shuffleEnabled ? 'Turn shuffle off' : 'Turn shuffle on'}
+                    >
+                        <Ionicons name={advancedSettings.shuffleEnabled ? 'shuffle' : 'shuffle-outline'} size={21} color={advancedSettings.shuffleEnabled ? accent : C.secondary} />
+                        <Text style={[styles.repeatModeText, { color: advancedSettings.shuffleEnabled ? accent : C.dim }]}>{advancedSettings.shuffleEnabled ? 'ON' : 'OFF'}</Text>
+                    </Pressable>
+                    <Pressable onPress={() => setShowQueue(true)} style={styles.queueCountControl} accessibilityRole="button" accessibilityLabel="Show playback queue">
+                        <Text numberOfLines={1} style={styles.nowFooterText}>{queue.length || tracks.length} tracks in queue</Text>
+                    </Pressable>
+                    <Pressable
+                        onPress={() => updateAdvancedSetting('repeatAllEnabled', !advancedSettings.repeatAllEnabled)}
+                        style={styles.repeatControl}
+                        accessibilityRole="switch"
+                        accessibilityState={{ checked: advancedSettings.repeatAllEnabled }}
+                        accessibilityLabel={`Repeat all ${advancedSettings.repeatAllEnabled ? 'on' : 'off'}`}
+                    >
+                        <Ionicons name={advancedSettings.repeatAllEnabled ? 'repeat' : 'repeat-outline'} size={21} color={advancedSettings.repeatAllEnabled ? accent : C.secondary} />
+                        <Text style={[styles.repeatModeText, { color: advancedSettings.repeatAllEnabled ? accent : C.dim }]}>{advancedSettings.repeatAllEnabled ? 'ALL' : 'OFF'}</Text>
                     </Pressable>
                     <Pressable onPress={() => setShowVolume(true)} style={styles.footerControl} accessibilityRole="button" accessibilityLabel="Adjust playback volume">
                         <Ionicons name={volume === 0 ? 'volume-mute-outline' : volume < 0.5 ? 'volume-low-outline' : 'volume-medium-outline'} size={20} color={C.secondary} />
@@ -1271,8 +1308,12 @@ const styles = StyleSheet.create({
     playbackError: { color: C.danger, fontSize: 11, textAlign: 'center', marginTop: 8 },
     transport: { height: 100, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly' },
     playButton: { width: 70, height: 70, borderRadius: 35, alignItems: 'center', justifyContent: 'center' },
-    nowFooter: { height: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, borderTopColor: C.border },
+    waveformBand: { height: 28, alignItems: 'center', justifyContent: 'center' },
+    nowFooter: { height: 43, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     footerControl: { minWidth: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+    repeatControl: { minWidth: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
+    repeatModeText: { fontSize: 7, fontWeight: '800', lineHeight: 9 },
+    queueCountControl: { flex: 1, minWidth: 0, alignItems: 'center' },
     nowFooterText: { color: C.secondary, fontSize: 11 },
     utilityModal: { maxHeight: '78%', padding: 20, borderRadius: 20, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
     utilityTitle: { color: C.text, fontSize: 18, fontWeight: '700', marginBottom: 12 },
