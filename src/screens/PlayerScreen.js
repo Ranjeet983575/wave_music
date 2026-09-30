@@ -57,6 +57,23 @@ function IconButton({ name, onPress, size = 22, color = C.text, style, accessibi
     );
 }
 
+function ToggleSwitch({ enabled, onToggle, activeColor = C.green }) {
+    return (
+        <Pressable
+            accessibilityRole="switch"
+            accessibilityState={{ checked: enabled }}
+            onPress={onToggle}
+            style={({ pressed }) => [
+                styles.togglePill,
+                enabled && { backgroundColor: activeColor },
+                pressed && styles.pressed,
+            ]}
+        >
+            <View style={[styles.toggleKnob, enabled && styles.toggleKnobActive]} />
+        </Pressable>
+    );
+}
+
 function Artwork({ size = 58, iconSize, tint = C.green, rounded = 15 }) {
     return (
         <View style={[styles.artwork, { width: size, height: size, borderRadius: rounded }]}>
@@ -144,6 +161,19 @@ export default function PlayerScreen() {
     const [autoPlay, setAutoPlay] = useState(false);
     const [scrubWidth, setScrubWidth] = useState(1);
     const [accent, setAccent] = useState(C.green);
+    const [themeMode, setThemeMode] = useState('Dark');
+    const [equalizerEnabled, setEqualizerEnabled] = useState(true);
+    const [audioFocusEnabled, setAudioFocusEnabled] = useState(true);
+    const [libraryAutoScan, setLibraryAutoScan] = useState(true);
+    const [smartImportEnabled, setSmartImportEnabled] = useState(false);
+    const [settingsView, setSettingsView] = useState('main');
+    const [eqLevels, setEqLevels] = useState([0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7]);
+    const [selectedPreset, setSelectedPreset] = useState('Custom');
+    const [selectedReverb, setSelectedReverb] = useState('Off');
+    const [preamp, setPreamp] = useState(0);
+    const [bassBoost, setBassBoost] = useState(0);
+    const [preampWidth, setPreampWidth] = useState(1);
+    const [bassBoostWidth, setBassBoostWidth] = useState(1);
 
     const player = useAudioPlayer(activeTrack?.uri || null, { updateInterval: 400 });
     const status = useAudioPlayerStatus(player);
@@ -498,28 +528,257 @@ export default function PlayerScreen() {
     }
 
     function renderSettings() {
+        const themeOptions = ['Light', 'Dark', 'System'];
+        const accentOptions = [C.green, '#8BCAFF', '#D2A7FF', '#FF9C83', '#FFD36D'];
+        const frequencies = [31, 62, 125, 250, 500, 1, 2, 4, 8, 16];
+        const presetMap = {
+            Custom: [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7],
+            Flat: [0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.6, 0.58, 0.54, 0.5],
+            Acoustic: [0.7, 0.78, 0.72, 0.68, 0.7, 0.66, 0.6, 0.56, 0.58, 0.62],
+            Classical: [0.68, 0.7, 0.74, 0.82, 0.76, 0.7, 0.64, 0.6, 0.56, 0.52],
+        };
+
+        const updateEqLevel = (index, value) => {
+            const clamped = Math.max(0, Math.min(1, value));
+            setSelectedPreset('Custom');
+            setEqLevels((current) => current.map((level, levelIndex) => (levelIndex === index ? clamped : level)));
+        };
+
+        const handleEqPress = (index, event) => {
+            const targetHeight = 170;
+            const offset = Math.max(0, Math.min(targetHeight, event.nativeEvent.locationY));
+            const ratio = 1 - offset / targetHeight;
+            updateEqLevel(index, ratio);
+        };
+
+        const applyPreset = (preset) => {
+            const next = presetMap[preset];
+            if (next) {
+                setSelectedPreset(preset);
+                setEqLevels(next);
+            }
+        };
+
+        const applyReverb = (reverb) => {
+            setSelectedReverb(reverb);
+        };
+
+        const updateSliderValue = (setter, width, xPosition) => {
+            const safeWidth = Math.max(1, width || 1);
+            const ratio = Math.max(0, Math.min(1, xPosition / safeWidth));
+            setter((ratio * 2) - 1);
+        };
+
+        const getSliderDisplay = (value) => ((value + 1) / 2) * 100;
+
+        if (settingsView === 'equalizer') {
+            return (
+                <ScrollView contentContainerStyle={styles.equalizerPage} showsVerticalScrollIndicator={false}>
+                    <View style={styles.settingsHeader}>
+                        <Pressable style={styles.headerBackButton} onPress={() => setSettingsView('main')}>
+                            <Ionicons name="arrow-back" size={22} color={C.text} />
+                        </Pressable>
+                        <Text style={styles.settingsHeaderTitle}>Equalizer</Text>
+                        <View style={styles.headerActionBadge}>
+                            <ToggleSwitch enabled={equalizerEnabled} onToggle={() => setEqualizerEnabled((value) => !value)} activeColor={C.green} />
+                        </View>
+                    </View>
+
+                    <View style={styles.eqVisualWrap}>
+                        <View style={styles.eqBars}>
+                            {eqLevels.map((ratio, index) => (
+                                <Pressable
+                                    key={frequencies[index]}
+                                    style={styles.eqBarColumn}
+                                    onPress={(event) => handleEqPress(index, event)}
+                                >
+                                    <Text style={styles.eqValue}>{ratio.toFixed(1)}</Text>
+                                    <View style={[styles.eqBarTrack, { height: 170 }]}>
+                                        <View style={[styles.eqBarFill, { height: `${ratio * 100}%` }]} />
+                                    </View>
+                                    <Text style={styles.eqFreq}>{frequencies[index]}{index >= 5 ? 'K' : ''}</Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    </View>
+
+                    <View style={styles.presetSection}>
+                        <View style={styles.presetRowHeader}>
+                            <Text style={styles.presetTitle}>Presets</Text>
+                            <Pressable style={styles.savePresetButton}>
+                                <Text style={styles.savePresetText}>Save preset</Text>
+                            </Pressable>
+                        </View>
+                        <View style={styles.presetGrid}>
+                            {['Custom', 'Flat', 'Acoustic', 'Classical'].map((preset) => (
+                                <Pressable
+                                    key={preset}
+                                    style={[styles.presetChip, selectedPreset === preset && styles.presetChipActive]}
+                                    onPress={() => applyPreset(preset)}
+                                >
+                                    <Text style={[styles.presetText, selectedPreset === preset && styles.presetTextActive]}>{preset}</Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    </View>
+
+                    <View style={styles.presetSection}>
+                        <Text style={styles.presetTitle}>Reverb</Text>
+                        <View style={styles.presetGrid}>
+                            {['Off', 'Room', 'Cathedral', 'Chamber'].map((preset) => (
+                                <Pressable
+                                    key={preset}
+                                    style={[styles.presetChip, selectedReverb === preset && styles.presetChipActive]}
+                                    onPress={() => applyReverb(preset)}
+                                >
+                                    <Text style={[styles.presetText, selectedReverb === preset && styles.presetTextActive]}>{preset}</Text>
+                                </Pressable>
+                            ))}
+                        </View>
+                    </View>
+
+                    <View style={styles.sliderBlock}>
+                        <View style={styles.sliderHeaderRow}>
+                            <Text style={styles.presetTitle}>Preamp</Text>
+                            <Text style={styles.sliderValue}>{preamp.toFixed(1)} dB</Text>
+                        </View>
+                        <Pressable
+                            onLayout={(event) => setPreampWidth(event.nativeEvent.layout.width)}
+                            onPress={(event) => updateSliderValue(setPreamp, preampWidth, event.nativeEvent.locationX)}
+                            style={styles.sliderTrack}
+                        >
+                            <View style={[styles.sliderFill, { width: `${getSliderDisplay(preamp)}%` }]} />
+                            <View style={[styles.sliderThumb, { left: `${getSliderDisplay(preamp)}%` }]} />
+                        </Pressable>
+                    </View>
+
+                    <View style={styles.sliderBlock}>
+                        <View style={styles.sliderHeaderRow}>
+                            <Text style={styles.presetTitle}>Bass Boost</Text>
+                            <Text style={styles.sliderValue}>{bassBoost.toFixed(1)} dB</Text>
+                        </View>
+                        <Pressable
+                            onLayout={(event) => setBassBoostWidth(event.nativeEvent.layout.width)}
+                            onPress={(event) => updateSliderValue(setBassBoost, bassBoostWidth, event.nativeEvent.locationX)}
+                            style={styles.sliderTrack}
+                        >
+                            <View style={[styles.sliderFill, { width: `${getSliderDisplay(bassBoost)}%` }]} />
+                            <View style={[styles.sliderThumb, { left: `${getSliderDisplay(bassBoost)}%` }]} />
+                        </Pressable>
+                    </View>
+                </ScrollView>
+            );
+        }
+
         return (
-            <ScrollView contentContainerStyle={styles.pageContent}>
-                <View style={styles.libraryHero}><View><Text style={styles.eyebrow}>MAKE IT YOURS</Text><Text style={styles.heroTitle}>Settings</Text></View></View>
-                <Text style={styles.settingLabel}>ACCENT COLOR</Text>
-                <View style={styles.accentRow}>
-                    {[C.green, '#8BCAFF', '#D2A7FF', '#FF9C83', '#FFD36D'].map((color) => (
-                        <Pressable key={color} onPress={() => setAccent(color)} style={[styles.accentSwatch, { backgroundColor: color }, accent === color && styles.accentSelected]} />
-                    ))}
+            <ScrollView contentContainerStyle={styles.settingsPage} showsVerticalScrollIndicator={false}>
+                <View style={styles.settingsHeader}>
+                    <Text style={styles.settingsHeaderTitle}>Settings</Text>
+                    <Pressable style={styles.headerActionBadge} accessibilityRole="button" accessibilityLabel="Quick actions">
+                        <Ionicons name="sparkles-outline" size={18} color={C.green} />
+                    </Pressable>
                 </View>
-                <Text style={styles.settingLabel}>MUSIC LIBRARY</Text>
-                <View style={styles.settingCard}>
-                    <View style={styles.settingIcon}><Ionicons name="musical-notes-outline" size={19} color={accent} /></View>
-                    <View style={styles.flexOne}><Text style={styles.cardTitle}>Device audio</Text><Text style={styles.cardSub}>{permissionGranted ? `${tracks.length} tracks found` : 'Audio-only access'}</Text></View>
-                    <Pressable onPress={scanLibrary} style={styles.smallAction}><Text style={styles.smallActionText}>{loading ? 'Scanning' : 'Rescan'}</Text></Pressable>
+
+                <View style={styles.settingsSection}>
+                    <Text style={styles.sectionCaption}>Playback</Text>
+                    <Pressable style={styles.settingRow} onPress={() => setSettingsView('equalizer')}>
+                        <View style={styles.settingRowIcon}><Ionicons name="options-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Equalizer</Text>
+                            <Text style={styles.settingRowDescription}>{equalizerEnabled ? 'Custom tune enabled' : 'Disabled'}</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.secondary} />
+                    </Pressable>
+
+                    <Pressable style={styles.settingRow} onPress={() => Alert.alert('Advanced settings', 'Crossfade, playback smoothing and auto-optimization are enabled for a seamless listening experience.')}>
+                        <View style={styles.settingRowIcon}><Ionicons name="construct-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Advanced settings</Text>
+                            <Text style={styles.settingRowDescription}>Fine controls for playback</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.secondary} />
+                    </Pressable>
+
+                    <Pressable style={styles.settingRow} onPress={() => setAudioFocusEnabled((value) => !value)}>
+                        <View style={styles.settingRowIcon}><Ionicons name="volume-medium-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Audio focus</Text>
+                            <Text style={styles.settingRowDescription}>{audioFocusEnabled ? 'Adaptive volume on' : 'Adaptive volume off'}</Text>
+                        </View>
+                        <ToggleSwitch enabled={audioFocusEnabled} onToggle={() => setAudioFocusEnabled((value) => !value)} />
+                    </Pressable>
                 </View>
-                {permissionGranted === false ? <Text style={styles.helperText}>Audio access was declined. Enable media access in iPhone Settings to scan your library.</Text> : null}
-                <Text style={styles.settingLabel}>ABOUT</Text>
-                <View style={styles.settingCard}>
-                    <View style={[styles.settingIcon, { backgroundColor: '#1F2D25' }]}><Ionicons name="waveform" size={19} color={accent} /></View>
-                    <View style={styles.flexOne}><Text style={styles.cardTitle}>Wave Music</Text><Text style={styles.cardSub}>A home for your sound</Text></View>
-                    <Text style={styles.version}>57</Text>
+
+                <View style={styles.settingsSection}>
+                    <Text style={styles.sectionCaption}>Appearance</Text>
+                    <View style={styles.segmentedRow}>
+                        {themeOptions.map((option) => (
+                            <Pressable
+                                key={option}
+                                style={[styles.segmentButton, themeMode === option && styles.segmentButtonActive]}
+                                onPress={() => setThemeMode(option)}
+                            >
+                                <Text style={[styles.segmentText, themeMode === option && styles.segmentTextActive]}>{option}</Text>
+                            </Pressable>
+                        ))}
+                    </View>
+
+                    <Text style={styles.inlineLabel}>Accent color</Text>
+                    <View style={styles.accentRow}>
+                        {accentOptions.map((color) => (
+                            <Pressable
+                                key={color}
+                                onPress={() => setAccent(color)}
+                                style={[styles.accentSwatch, { backgroundColor: color }, accent === color && styles.accentSelected]}
+                            />
+                        ))}
+                    </View>
                 </View>
+
+                <View style={styles.settingsSection}>
+                    <Text style={styles.sectionCaption}>Library</Text>
+                    <View style={styles.settingCard}>
+                        <View style={styles.settingIcon}><Ionicons name="musical-notes-outline" size={18} color={accent} /></View>
+                        <View style={styles.flexOne}>
+                            <Text style={styles.cardTitle}>Device library</Text>
+                            <Text style={styles.cardSub}>{permissionGranted ? `${tracks.length} tracks available` : 'Access media files on this device'}</Text>
+                        </View>
+                        <Pressable onPress={scanLibrary} style={styles.smallAction}>
+                            <Text style={styles.smallActionText}>{loading ? 'Scanning' : 'Rescan'}</Text>
+                        </Pressable>
+                    </View>
+
+                    <Pressable style={styles.settingRow} onPress={() => setLibraryAutoScan((value) => !value)}>
+                        <View style={styles.settingRowIcon}><Ionicons name="scan-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Auto scan</Text>
+                            <Text style={styles.settingRowDescription}>{libraryAutoScan ? 'On' : 'Off'}</Text>
+                        </View>
+                        <ToggleSwitch enabled={libraryAutoScan} onToggle={() => setLibraryAutoScan((value) => !value)} />
+                    </Pressable>
+
+                    <Pressable style={styles.settingRow} onPress={() => setSmartImportEnabled((value) => !value)}>
+                        <View style={styles.settingRowIcon}><Ionicons name="folder-open-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Smart import</Text>
+                            <Text style={styles.settingRowDescription}>{smartImportEnabled ? 'Organize automatically' : 'Ask before importing'}</Text>
+                        </View>
+                        <ToggleSwitch enabled={smartImportEnabled} onToggle={() => setSmartImportEnabled((value) => !value)} />
+                    </Pressable>
+
+                    <Pressable style={styles.settingRow} onPress={importMusicFiles}>
+                        <View style={styles.settingRowIcon}><Ionicons name="add-circle-outline" size={20} color={C.green} /></View>
+                        <View style={styles.settingRowText}>
+                            <Text style={styles.settingRowTitle}>Import music</Text>
+                            <Text style={styles.settingRowDescription}>Files and local audio</Text>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color={C.secondary} />
+                    </Pressable>
+                </View>
+
+                {permissionGranted === false ? (
+                    <Text style={styles.helperText}>Audio access was declined. Enable media access in iPhone Settings to scan your library.</Text>
+                ) : null}
             </ScrollView>
         );
     }
@@ -764,13 +1023,66 @@ const styles = StyleSheet.create({
     secondaryButton: { marginTop: 14, minHeight: 42, paddingHorizontal: 14, borderRadius: 13, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 8 },
     secondaryButtonText: { color: C.green, fontSize: 13, fontWeight: '600' },
     pageContent: { paddingHorizontal: 20, paddingBottom: 24 },
+    settingsPage: { paddingHorizontal: 18, paddingBottom: 28 },
+    equalizerPage: { paddingHorizontal: 18, paddingBottom: 28 },
+    settingsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 18, paddingBottom: 16 },
+    settingsHeaderTitle: { color: C.text, fontSize: 30, fontWeight: '700', letterSpacing: -0.6 },
+    headerBackButton: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1A221F', borderWidth: 1, borderColor: '#243228', alignItems: 'center', justifyContent: 'center' },
+    headerActionBadge: { width: 52, height: 38, borderRadius: 16, backgroundColor: '#1A221F', borderWidth: 1, borderColor: '#243228', alignItems: 'center', justifyContent: 'center' },
+    settingsSection: { backgroundColor: '#141914', borderRadius: 22, borderWidth: 1, borderColor: '#232B27', paddingVertical: 8, paddingHorizontal: 10, marginBottom: 18 },
+    sectionCaption: { color: '#93A19B', fontSize: 11, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', paddingHorizontal: 10, paddingTop: 12, paddingBottom: 8 },
+    settingRow: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 14 },
+    settingRowIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#171E1B', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#27312D' },
+    settingRowText: { flex: 1, minWidth: 0 },
+    settingRowTitle: { color: C.text, fontSize: 17, fontWeight: '600' },
+    settingRowDescription: { color: C.secondary, fontSize: 12, marginTop: 3 },
+    togglePill: { width: 52, height: 30, borderRadius: 15, backgroundColor: '#434B47', justifyContent: 'center', paddingHorizontal: 4 },
+    togglePillActive: { backgroundColor: C.green },
+    toggleKnob: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#F4F6F4', alignSelf: 'flex-start' },
+    toggleKnobActive: { alignSelf: 'flex-end' },
+    segmentedRow: { flexDirection: 'row', backgroundColor: '#1C241F', borderRadius: 14, padding: 4, marginHorizontal: 4, marginBottom: 10 },
+    segmentButton: { flex: 1, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10 },
+    segmentButtonActive: { backgroundColor: C.green },
+    segmentText: { fontSize: 12, fontWeight: '700', color: '#D7DDD9', letterSpacing: 0.7 },
+    segmentTextActive: { color: '#0B120F' },
+    inlineLabel: { color: '#A9B3AE', fontSize: 11, fontWeight: '700', letterSpacing: 1.1, textTransform: 'uppercase', paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
+    accentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingBottom: 12 },
+    accentSwatch: { width: 30, height: 30, borderRadius: 8, borderWidth: 2, borderColor: 'transparent' },
+    accentSelected: { borderColor: '#F3F5F2', transform: [{ scale: 1.08 }] },
+    eqVisualWrap: { marginTop: 8, marginBottom: 12, paddingTop: 12, paddingBottom: 10, borderRadius: 18, backgroundColor: '#0F1412' },
+    eqBars: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingHorizontal: 10, minHeight: 210 },
+    eqBarColumn: { flex: 1, alignItems: 'center', justifyContent: 'flex-end', minWidth: 0 },
+    eqValue: { color: '#A3B0AB', fontSize: 10, marginBottom: 6 },
+    eqBarTrack: { width: 12, borderRadius: 6, backgroundColor: '#2E3936', justifyContent: 'flex-end', overflow: 'hidden' },
+    eqBarFill: { width: '100%', borderRadius: 6, backgroundColor: C.green },
+    eqFreq: { color: '#A3B0AB', fontSize: 11, marginTop: 8 },
+    presetSection: { marginTop: 14, marginBottom: 4 },
+    presetRowHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    presetTitle: { color: C.text, fontSize: 20, fontWeight: '700' },
+    savePresetButton: { minHeight: 34, borderRadius: 12, backgroundColor: '#1D2A24', paddingHorizontal: 14, justifyContent: 'center' },
+    savePresetText: { color: C.green, fontSize: 12, fontWeight: '700' },
+    presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+    presetChip: { flexBasis: '48%', minHeight: 42, borderRadius: 12, backgroundColor: '#1D2421', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#2A312E' },
+    presetChipActive: { backgroundColor: C.green },
+    presetText: { color: '#EAEDEB', fontSize: 15, fontWeight: '600' },
+    presetTextActive: { color: '#09110F' },
+    sliderBlock: { marginTop: 18 },
+    sliderHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+    sliderValue: { color: '#D9E0DD', fontSize: 16, fontWeight: '600' },
+    sliderTrack: { height: 12, borderRadius: 10, backgroundColor: '#2E3936', position: 'relative', justifyContent: 'center', overflow: 'hidden' },
+    sliderFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.green, borderRadius: 10 },
+    sliderThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#F2F5F3', position: 'absolute', top: -5, transform: [{ translateX: -11 }], borderWidth: 1, borderColor: '#A7B6B0' },
+    settingCard: { minHeight: 72, paddingHorizontal: 12, marginHorizontal: 4, borderRadius: 16, backgroundColor: '#1A201D', borderWidth: 1, borderColor: '#2A302E', flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
+    settingIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#18251C', alignItems: 'center', justifyContent: 'center' },
+    smallAction: { minHeight: 34, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#1E372A', justifyContent: 'center' },
+    smallActionText: { color: C.green, fontSize: 12, fontWeight: '700' },
     addButton: { backgroundColor: C.green, width: 40, height: 40, borderRadius: 20 },
     favoritePlaylist: { minHeight: 83, padding: 12, borderRadius: 17, backgroundColor: '#18211C', flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 10 },
     favoriteArt: { width: 58, height: 58, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
     playlistRow: { minHeight: 82, flexDirection: 'row', alignItems: 'center', gap: 13, borderBottomWidth: 1, borderBottomColor: C.border },
-    cardTitle: { color: C.text, fontSize: 14, fontWeight: '600' },
+    cardTitle: { color: C.text, fontSize: 15, fontWeight: '600' },
     cardSub: { color: C.secondary, fontSize: 11, marginTop: 5 },
-    helperText: { color: C.dim, fontSize: 12, lineHeight: 19, paddingTop: 17 },
+    helperText: { color: C.dim, fontSize: 12, lineHeight: 19, paddingTop: 8, paddingHorizontal: 10 },
     detailHeader: { paddingHorizontal: 12, paddingVertical: 13, flexDirection: 'row', alignItems: 'center', gap: 6 },
     sectionTitle: { color: C.text, fontSize: 22, fontWeight: '700' },
     albumGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingTop: 4 },
