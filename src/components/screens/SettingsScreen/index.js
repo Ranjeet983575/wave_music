@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { APP_THEME } from '../../../constants/theme';
 import { ToggleSwitch } from '../../common';
@@ -23,6 +23,7 @@ export default function SettingsScreen({
   setThemeMode,
   setAccent,
   onOpenEqualizer,
+  onOpenAdvancedSettings,
   onScanLibrary,
   onImportMusicFiles,
 }) {
@@ -49,11 +50,11 @@ export default function SettingsScreen({
           <Ionicons name="chevron-forward" size={18} color={C.secondary} />
         </Pressable>
 
-        <Pressable style={styles.settingRow} onPress={() => Alert.alert('Advanced settings', 'Crossfade, playback smoothing and auto-optimization are enabled for a seamless listening experience.')}>
+        <Pressable style={styles.settingRow} onPress={onOpenAdvancedSettings}>
           <View style={styles.settingRowIcon}><Ionicons name="construct-outline" size={20} color={C.green} /></View>
           <View style={styles.settingRowText}>
             <Text style={styles.settingRowTitle}>Advanced settings</Text>
-            <Text style={styles.settingRowDescription}>Fine controls for playback</Text>
+            <Text style={styles.settingRowDescription}>Rate, pitch and output controls</Text>
           </View>
           <Ionicons name="chevron-forward" size={18} color={C.secondary} />
         </Pressable>

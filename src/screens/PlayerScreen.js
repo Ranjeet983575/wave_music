@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
     Modal,
     Pressable,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -12,6 +13,7 @@ import {
     View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import {
     formatDuration,
@@ -23,6 +25,8 @@ import {
     savePlaylists,
     scanDeviceMusic,
 } from '../data/musicLibrary';
+import { DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../data/playbackSettings';
+import AdvancedSettingsScreen from '../components/screens/AdvancedSettingsScreen';
 
 const C = {
     background: '#090B0A',
@@ -167,6 +171,8 @@ export default function PlayerScreen() {
     const [libraryAutoScan, setLibraryAutoScan] = useState(true);
     const [smartImportEnabled, setSmartImportEnabled] = useState(false);
     const [settingsView, setSettingsView] = useState('main');
+    const [advancedSettings, setAdvancedSettings] = useState(DEFAULT_PLAYBACK_SETTINGS);
+    const [advancedSettingsReady, setAdvancedSettingsReady] = useState(false);
     const [eqLevels, setEqLevels] = useState([0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7]);
     const [selectedPreset, setSelectedPreset] = useState('Custom');
     const [selectedReverb, setSelectedReverb] = useState('Off');
@@ -177,6 +183,7 @@ export default function PlayerScreen() {
 
     const player = useAudioPlayer(activeTrack?.uri || null, { updateInterval: 400 });
     const status = useAudioPlayerStatus(player);
+    const completedTrackRef = useRef(null);
 
     useEffect(() => {
         setAudioModeAsync({ playsInSilentMode: true }).catch(() => { });
@@ -193,6 +200,47 @@ export default function PlayerScreen() {
             setAutoPlay(false);
         }
     }, [autoPlay, player, status.isLoaded]);
+
+    useEffect(() => {
+        let isMounted = true;
+        loadPlaybackSettings().then((storedSettings) => {
+            if (!isMounted) return;
+            setAdvancedSettings(storedSettings);
+            setAdvancedSettingsReady(true);
+        });
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
+        if (advancedSettingsReady) savePlaybackSettings(advancedSettings);
+    }, [advancedSettings, advancedSettingsReady]);
+
+    useEffect(() => {
+        if (!status.isLoaded) return;
+        player.shouldCorrectPitch = advancedSettings.pitchCorrection;
+        player.setPlaybackRate(advancedSettings.playbackRate);
+    }, [advancedSettings.pitchCorrection, advancedSettings.playbackRate, player, status.isLoaded]);
+
+    useEffect(() => {
+        const limitedVolume = Math.min(volume, advancedSettings.volumeLimit);
+        if (limitedVolume !== volume) setVolume(limitedVolume);
+        player.volume = limitedVolume;
+    }, [advancedSettings.volumeLimit, player, volume]);
+
+    useEffect(() => {
+        if (!status.didJustFinish) {
+            completedTrackRef.current = null;
+            return;
+        }
+        if (!activeTrack || completedTrackRef.current === activeTrack.id) return;
+        completedTrackRef.current = activeTrack.id;
+        if (!advancedSettings.autoPlayNext) return;
+        const source = queue.length ? queue : tracks;
+        const currentIndex = source.findIndex((track) => track.id === activeTrack.id);
+        const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % source.length;
+        if (source.length) completedTrackRef.current = source[nextIndex].id;
+        playNext(1);
+    }, [activeTrack, advancedSettings.autoPlayNext, queue, status.didJustFinish, tracks]);
 
     async function scanLibrary() {
         setLoading(true);
@@ -259,10 +307,25 @@ export default function PlayerScreen() {
         setAutoPlay(true);
     }
 
+    function triggerPlaybackHaptic(isPlaying) {
+        if (!advancedSettings.hapticsEnabled) return;
+        const feedback = Platform.OS === 'android'
+            ? Haptics.performAndroidHapticsAsync(isPlaying ? Haptics.AndroidHaptics.Toggle_On : Haptics.AndroidHaptics.Toggle_Off)
+            : Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        feedback.catch(() => { });
+    }
+
     function togglePlay() {
-        if (status.playing) player.pause();
-        else if (activeTrack) player.play();
-        else if (tracks[0]) playTrack(tracks[0]);
+        if (status.playing) {
+            player.pause();
+            triggerPlaybackHaptic(false);
+        } else if (activeTrack) {
+            player.play();
+            triggerPlaybackHaptic(true);
+        } else if (tracks[0]) {
+            playTrack(tracks[0]);
+            triggerPlaybackHaptic(true);
+        }
     }
 
     function playNext(direction = 1) {
@@ -339,9 +402,13 @@ export default function PlayerScreen() {
     }
 
     function updateVolume(nextVolume) {
-        const next = Math.max(0, Math.min(1, nextVolume));
+        const next = Math.max(0, Math.min(advancedSettings.volumeLimit, nextVolume));
         player.volume = next;
         setVolume(next);
+    }
+
+    function updateAdvancedSetting(key, value) {
+        setAdvancedSettings((current) => ({ ...current, [key]: value }));
     }
 
     function onVolumePress(event) {
@@ -571,6 +638,26 @@ export default function PlayerScreen() {
 
         const getSliderDisplay = (value) => ((value + 1) / 2) * 100;
 
+        if (settingsView === 'advanced') {
+            return (
+                <AdvancedSettingsScreen
+                    accent={accent}
+                    autoPlayNext={advancedSettings.autoPlayNext}
+                    onToggleAutoPlayNext={() => updateAdvancedSetting('autoPlayNext', !advancedSettings.autoPlayNext)}
+                    pitchCorrection={advancedSettings.pitchCorrection}
+                    onTogglePitchCorrection={() => updateAdvancedSetting('pitchCorrection', !advancedSettings.pitchCorrection)}
+                    hapticsEnabled={advancedSettings.hapticsEnabled}
+                    onToggleHaptics={() => updateAdvancedSetting('hapticsEnabled', !advancedSettings.hapticsEnabled)}
+                    playbackRate={advancedSettings.playbackRate}
+                    onSetPlaybackRate={(rate) => updateAdvancedSetting('playbackRate', rate)}
+                    volumeLimit={advancedSettings.volumeLimit}
+                    onSetVolumeLimit={(limit) => updateAdvancedSetting('volumeLimit', Math.max(0.3, Math.min(1, limit)))}
+                    onReset={() => setAdvancedSettings(DEFAULT_PLAYBACK_SETTINGS)}
+                    onBack={() => setSettingsView('main')}
+                />
+            );
+        }
+
         if (settingsView === 'equalizer') {
             return (
                 <ScrollView contentContainerStyle={styles.equalizerPage} showsVerticalScrollIndicator={false}>
@@ -690,7 +777,7 @@ export default function PlayerScreen() {
                         <Ionicons name="chevron-forward" size={18} color={C.secondary} />
                     </Pressable>
 
-                    <Pressable style={styles.settingRow} onPress={() => Alert.alert('Advanced settings', 'Crossfade, playback smoothing and auto-optimization are enabled for a seamless listening experience.')}>
+                    <Pressable style={styles.settingRow} onPress={() => setSettingsView('advanced')}>
                         <View style={styles.settingRowIcon}><Ionicons name="construct-outline" size={20} color={C.green} /></View>
                         <View style={styles.settingRowText}>
                             <Text style={styles.settingRowTitle}>Advanced settings</Text>
@@ -894,7 +981,7 @@ export default function PlayerScreen() {
             <View style={styles.topBar}>
                 <View style={styles.brandDot}><Ionicons name="pulse" size={18} color={C.background} /></View>
                 <View style={styles.flexOne}><Text style={styles.brandName}>WAVE</Text><Text style={styles.brandCaption}>YOUR MUSIC, YOUR CURRENT</Text></View>
-                <IconButton name="person-circle-outline" color={C.secondary} onPress={() => setActiveTab('Settings')} accessibilityLabel="Open settings" />
+                <IconButton name="person-circle-outline" color={C.secondary} onPress={() => { setActiveTab('Settings'); setSettingsView('main'); }} accessibilityLabel="Open settings" />
             </View>
             <View style={styles.content}>
                 {activeTab === 'Tracks' ? renderTracks() : null}
@@ -915,7 +1002,7 @@ export default function PlayerScreen() {
                 {TABS.map((tab) => {
                     const active = activeTab === tab.key;
                     return (
-                        <Pressable key={tab.key} style={styles.tab} onPress={() => { setActiveTab(tab.key); setSelectedPlaylist(null); }} accessibilityRole="tab" accessibilityState={{ selected: active }}>
+                        <Pressable key={tab.key} style={styles.tab} onPress={() => { setActiveTab(tab.key); setSelectedPlaylist(null); setSettingsView('main'); }} accessibilityRole="tab" accessibilityState={{ selected: active }}>
                             <Ionicons name={active ? tab.icon.replace('-outline', '') : tab.icon} size={21} color={active ? accent : C.dim} />
                             <Text style={[styles.tabText, active && { color: accent }]}>{tab.key}</Text>
                         </Pressable>
