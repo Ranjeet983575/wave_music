@@ -15,6 +15,14 @@ function titleFromFilename(filename) {
         .trim();
 }
 
+function isSameImportedFile(first, second) {
+    const firstName = (first.filename || '').trim().toLocaleLowerCase();
+    const secondName = (second.filename || '').trim().toLocaleLowerCase();
+    if (!firstName || firstName !== secondName) return false;
+    // Older saved imports have no size metadata, so treat a matching name as a duplicate.
+    return !first.size || !second.size || first.size === second.size;
+}
+
 async function albumNameForAsset(asset) {
     try {
         const [album] = await asset.getAlbums();
@@ -80,33 +88,50 @@ export async function importAudioFiles() {
         multiple: true,
         copyToCacheDirectory: true,
     });
-    if (selection.canceled) return [];
+    if (selection.canceled) return { additions: [], skipped: 0, canceled: true };
 
     const directory = new Directory(Paths.document, 'WaveMusicImports');
     if (!directory.exists) directory.create({ intermediates: true, idempotent: true });
 
     const importedTracks = await loadImportedTracks();
     const additions = [];
+    let skipped = 0;
+    const seen = [...importedTracks];
     for (const [index, asset] of selection.assets.entries()) {
+        const candidate = { filename: asset.name, size: asset.size || 0 };
+        if (seen.some((track) => isSameImportedFile(track, candidate))) {
+            skipped += 1;
+            continue;
+        }
         const filename = asset.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
         const destination = new File(directory, `${Date.now()}-${index}-${filename}`);
         await new File(asset.uri).copy(destination);
-        additions.push({
+        const track = {
             id: `import:${destination.uri}`,
             uri: destination.uri,
             filename: asset.name,
+            size: asset.size || 0,
             title: titleFromFilename(asset.name),
             artist: 'Unknown artist',
             album: 'Imported audio',
             duration: 0,
             creationTime: asset.lastModified || Date.now(),
             source: 'files',
-        });
+        };
+        additions.push(track);
+        seen.push(track);
     }
 
     const merged = [...importedTracks, ...additions];
     await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(merged));
-    return additions;
+    return { additions, skipped, canceled: false };
+}
+
+export async function removeImportedTrack(trackId) {
+    const importedTracks = await loadImportedTracks();
+    const nextTracks = importedTracks.filter((track) => track.id !== trackId);
+    await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(nextTracks));
+    return nextTracks;
 }
 
 export async function loadPlaylists() {

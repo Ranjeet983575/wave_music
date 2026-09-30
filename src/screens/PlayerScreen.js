@@ -18,6 +18,7 @@ import {
     importAudioFiles,
     loadFavorites,
     loadPlaylists,
+    removeImportedTrack,
     saveFavorites,
     savePlaylists,
     scanDeviceMusic,
@@ -77,19 +78,26 @@ function TrackRow({ track, index, onPress, onMore, favorite, onFavorite }) {
             </Pressable>
             <View style={styles.trackMeta}>
                 <Text style={styles.trackDuration}>{track.duration ? formatDuration(track.duration) : '--:--'}</Text>
-                <IconButton
-                    name={favorite ? 'heart' : 'ellipsis-horizontal'}
-                    color={favorite ? C.green : C.secondary}
+                {favorite ? <IconButton
+                    name="heart"
+                    color={C.green}
                     size={20}
-                    onPress={favorite ? onFavorite : onMore}
-                    accessibilityLabel={favorite ? 'Remove from favorites' : 'Track options'}
+                    onPress={onFavorite}
+                    accessibilityLabel="Remove from favorites"
+                /> : null}
+                <IconButton
+                    name="ellipsis-horizontal"
+                    color={C.secondary}
+                    size={20}
+                    onPress={onMore}
+                    accessibilityLabel="Track options"
                 />
             </View>
         </View>
     );
 }
 
-function EmptyState({ icon, title, detail, action, onAction, busy, secondaryAction, onSecondaryAction }) {
+function EmptyState({ icon, title, detail, action, onAction, busy, busyText = 'Scanning library', secondaryAction, onSecondaryAction }) {
     return (
         <View style={styles.emptyState}>
             <View style={styles.emptyIcon}><Ionicons name={icon} size={34} color={C.green} /></View>
@@ -98,7 +106,7 @@ function EmptyState({ icon, title, detail, action, onAction, busy, secondaryActi
             {action ? (
                 <Pressable onPress={onAction} style={styles.primaryButton}>
                     {busy ? <ActivityIndicator color={C.background} /> : <Ionicons name="scan-outline" size={18} color={C.background} />}
-                    <Text style={styles.primaryButtonText}>{busy ? 'Scanning library' : action}</Text>
+                    <Text style={styles.primaryButtonText}>{busy ? busyText : action}</Text>
                 </Pressable>
             ) : null}
             {secondaryAction ? (
@@ -119,6 +127,7 @@ export default function PlayerScreen() {
     const [activeTrack, setActiveTrack] = useState(null);
     const [queue, setQueue] = useState([]);
     const [showNowPlaying, setShowNowPlaying] = useState(false);
+    const [trackOptionsTrack, setTrackOptionsTrack] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -169,9 +178,17 @@ export default function PlayerScreen() {
         setImporting(true);
         setError('');
         try {
-            const additions = await importAudioFiles();
+            const { additions, skipped, canceled } = await importAudioFiles();
             if (additions.length) {
                 setTracks((current) => [...current, ...additions].sort((a, b) => a.title.localeCompare(b.title)));
+            }
+            if (!canceled && skipped) {
+                Alert.alert(
+                    additions.length ? 'Import complete' : 'Already imported',
+                    additions.length
+                        ? `Added ${additions.length} ${additions.length === 1 ? 'track' : 'tracks'}; skipped ${skipped} duplicate ${skipped === 1 ? 'file' : 'files'}.`
+                        : `${skipped === 1 ? 'This file is' : 'These files are'} already in your library.`,
+                );
             }
         } catch (importError) {
             Alert.alert('Could not import audio', importError?.message || 'Choose an audio file stored in Files and try again.');
@@ -253,16 +270,31 @@ export default function PlayerScreen() {
     }
 
     function showTrackOptions(track) {
+        setTrackOptionsTrack(track);
+    }
+
+    function getTrackOptionItems(track) {
         const options = [
             { text: 'Play next', onPress: () => playTrack(track, [track, ...tracks.filter((item) => item.id !== track.id)]) },
             { text: favorites.includes(track.id) ? 'Remove from favorites' : 'Add to favorites', onPress: () => toggleFavorite(track) },
         ];
+        if (track.source === 'files' || track.id?.startsWith('import:')) options.push({
+            text: 'Remove from imports',
+            destructive: true,
+            onPress: async () => {
+                await removeImportedTrack(track.id);
+                setTracks((current) => current.filter((item) => item.id !== track.id));
+                if (activeTrack?.id === track.id) {
+                    player.pause();
+                    setActiveTrack(null);
+                }
+            },
+        });
         playlists.forEach((playlist) => options.push({
             text: `Add to ${playlist.name}`,
             onPress: () => addTrackToPlaylist(track, playlist),
         }));
-        options.push({ text: 'Cancel', style: 'cancel' });
-        Alert.alert(track.title, 'Choose an action', options);
+        return options;
     }
 
     function onSeek(event) {
@@ -313,16 +345,8 @@ export default function PlayerScreen() {
         }
         return (
             <>
-                <View style={styles.libraryHero}>
-                    <View>
-                        <Text style={styles.eyebrow}>YOUR COLLECTION</Text>
-                        <Text style={styles.heroTitle}>All tracks</Text>
-                        <Text style={styles.trackCount}>{tracks.length} {tracks.length === 1 ? 'track' : 'tracks'}</Text>
-                    </View>
-                    <Pressable onPress={importMusicFiles} style={styles.importButton} disabled={importing} accessibilityRole="button" accessibilityLabel="Import audio files">
-                        {importing ? <ActivityIndicator size="small" color={C.green} /> : <Ionicons name="folder-open-outline" size={17} color={C.green} />}
-                        <Text style={styles.importButtonText}>{importing ? 'Importing' : 'Import'}</Text>
-                    </Pressable>
+                <View style={styles.tracksHero}>
+                    <Text style={styles.trackCount}>{tracks.length} {tracks.length === 1 ? 'track' : 'tracks'}</Text>
                 </View>
                 {searchOpen ? (
                     <View style={styles.searchField}>
@@ -421,6 +445,44 @@ export default function PlayerScreen() {
         );
     }
 
+    function renderImports() {
+        const importSources = [
+            { title: 'Computer', subtitle: 'Using Wi-Fi', icon: 'desktop-outline', color: '#55B9FF', message: 'Computer transfer is not available yet.' },
+            { title: 'iPhone/iPad/iPod', subtitle: 'Transfer tracks', icon: 'phone-portrait-outline', color: '#E27777', message: 'Use Files to select audio stored on this device.' },
+            { title: 'Android', subtitle: 'Android iOS file share', icon: 'phone-portrait-outline', color: '#20C875', message: 'Use Files to select audio stored on this device.' },
+            { title: 'Files', subtitle: 'Import tracks from files', icon: 'folder', color: '#58AEFF', onPress: importMusicFiles },
+            { title: 'Apple Music', subtitle: 'Import tracks from apple music', icon: 'musical-note', color: '#E85A9B', message: 'Apple Music tracks cannot be imported directly. Choose audio files from Files.' },
+            { title: 'Dropbox', subtitle: 'Tap to sign in', icon: 'logo-dropbox', color: '#3987FF', message: 'Dropbox import is not available yet.' },
+            { title: 'Google Drive', subtitle: 'Tap to sign in', icon: 'triangle-outline', color: '#4A9C69', message: 'Google Drive import is not available yet.' },
+            { title: 'OneDrive', subtitle: 'Tap to sign in', icon: 'cloud', color: '#2878E8', message: 'OneDrive import is not available yet.' },
+        ];
+        return (
+            <ScrollView contentContainerStyle={styles.importPage}>
+                <View style={styles.importHeader}><Text style={[styles.importTitle, { color: accent }]}>Import</Text></View>
+                {importSources.map((source) => (
+                    <Pressable
+                        key={source.title}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${source.title}, ${source.subtitle}`}
+                        disabled={source.title === 'Files' && importing}
+                        onPress={source.onPress || (() => Alert.alert(source.title, source.message))}
+                        style={({ pressed }) => [styles.importSource, pressed && styles.pressed]}
+                    >
+                        <View style={styles.importSourceIcon}>
+                            {source.title === 'Files' && importing
+                                ? <ActivityIndicator color={source.color} />
+                                : <Ionicons name={source.icon} size={39} color={source.color} />}
+                        </View>
+                        <View style={styles.importSourceText}>
+                            <Text style={styles.importSourceTitle}>{source.title}</Text>
+                            <Text style={styles.importSourceSubtitle}>{source.title === 'Files' && importing ? 'Importing tracks…' : source.subtitle}</Text>
+                        </View>
+                    </Pressable>
+                ))}
+            </ScrollView>
+        );
+    }
+
     function renderSettings() {
         return (
             <ScrollView contentContainerStyle={styles.pageContent}>
@@ -508,6 +570,7 @@ export default function PlayerScreen() {
                 {activeTab === 'Tracks' ? renderTracks() : null}
                 {activeTab === 'Playlists' ? renderPlaylists() : null}
                 {activeTab === 'Albums' ? renderAlbums() : null}
+                {activeTab === 'Import' ? renderImports() : null}
                 {activeTab === 'Settings' ? renderSettings() : null}
             </View>
             {activeTrack ? (
@@ -551,6 +614,31 @@ export default function PlayerScreen() {
                     </View>
                 </View>
             </Modal>
+            <Modal transparent visible={!!trackOptionsTrack} animationType="fade" onRequestClose={() => setTrackOptionsTrack(null)}>
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.trackOptionsModal}>
+                        <Text numberOfLines={1} style={styles.trackOptionsTitle}>{trackOptionsTrack?.title}</Text>
+                        <Text style={styles.trackOptionsSubtitle}>Track options</Text>
+                        <ScrollView style={styles.trackOptionsList}>
+                            {trackOptionsTrack ? getTrackOptionItems(trackOptionsTrack).map((option) => (
+                                <Pressable
+                                    key={option.text}
+                                    onPress={() => {
+                                        setTrackOptionsTrack(null);
+                                        option.onPress();
+                                    }}
+                                    style={({ pressed }) => [styles.trackOption, pressed && styles.pressed]}
+                                >
+                                    <Text style={[styles.trackOptionText, option.destructive && styles.trackOptionDestructive]}>{option.text}</Text>
+                                </Pressable>
+                            )) : null}
+                        </ScrollView>
+                        <Pressable onPress={() => setTrackOptionsTrack(null)} style={styles.trackOptionsCancel}>
+                            <Text style={styles.trackOptionsCancelText}>Cancel</Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </Modal>
         </View>
     );
 }
@@ -566,8 +654,17 @@ const styles = StyleSheet.create({
     iconButton: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center', borderRadius: 21 },
     pressed: { opacity: 0.72, transform: [{ scale: 0.97 }] },
     libraryHero: { minHeight: 96, paddingHorizontal: 22, paddingTop: 20, paddingBottom: 14, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end' },
+    tracksHero: { minHeight: 44, paddingHorizontal: 22, paddingVertical: 7, justifyContent: 'center' },
     importButton: { minHeight: 40, paddingHorizontal: 13, borderRadius: 13, borderWidth: 1, borderColor: '#365441', backgroundColor: '#18251D', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, marginBottom: 2 },
     importButtonText: { color: C.green, fontSize: 12, fontWeight: '700' },
+    importPage: { paddingHorizontal: 16, paddingBottom: 20 },
+    importHeader: { height: 88, alignItems: 'center', justifyContent: 'center' },
+    importTitle: { fontSize: 23, fontWeight: '700' },
+    importSource: { minHeight: 96, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 17, borderWidth: 1, borderColor: '#176B39', backgroundColor: '#050706', flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+    importSourceIcon: { width: 68, alignItems: 'center', justifyContent: 'center', marginRight: 12 },
+    importSourceText: { flex: 1 },
+    importSourceTitle: { color: C.text, fontSize: 20, fontWeight: '500' },
+    importSourceSubtitle: { color: '#D2D7D4', fontSize: 15, marginTop: 2 },
     eyebrow: { color: C.dim, fontSize: 10, fontWeight: '700', letterSpacing: 1.6, marginBottom: 7 },
     heroTitle: { color: C.text, fontSize: 29, fontWeight: '700', letterSpacing: 0 },
     trackCount: { color: C.secondary, fontSize: 12, marginBottom: 5 },
@@ -649,6 +746,15 @@ const styles = StyleSheet.create({
     nowFooterText: { color: C.secondary, fontSize: 11 },
     modalBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#000000B8' },
     createModal: { padding: 21, borderRadius: 20, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
+    trackOptionsModal: { maxHeight: '78%', padding: 20, borderRadius: 20, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
+    trackOptionsTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
+    trackOptionsSubtitle: { color: C.secondary, fontSize: 12, marginTop: 5, marginBottom: 10 },
+    trackOptionsList: { flexGrow: 0 },
+    trackOption: { minHeight: 48, justifyContent: 'center', borderTopWidth: 1, borderTopColor: C.border },
+    trackOptionText: { color: C.text, fontSize: 14 },
+    trackOptionDestructive: { color: C.danger },
+    trackOptionsCancel: { minHeight: 45, marginTop: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#252D28' },
+    trackOptionsCancelText: { color: C.text, fontSize: 14, fontWeight: '600' },
     modalEyebrow: { color: C.green, fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
     modalTitle: { color: C.text, fontSize: 22, fontWeight: '700', marginTop: 7 },
     playlistInput: { height: 48, color: C.text, fontSize: 14, marginTop: 17, paddingHorizontal: 13, borderRadius: 12, backgroundColor: C.background, borderWidth: 1, borderColor: C.border },
