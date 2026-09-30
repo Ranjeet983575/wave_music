@@ -1,8 +1,8 @@
 import React from 'react';
 import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { APP_THEME } from '../../../constants/theme';
-import { Artwork, EmptyState, IconButton, TrackRow } from '../../common';
+import { APP_THEME } from '../../constants/theme';
+import { Artwork, EmptyState, IconButton, TrackRow } from '../../components/common';
 
 const C = APP_THEME;
 

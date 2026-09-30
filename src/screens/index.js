@@ -1,3 +1,4 @@
+export { default as PlayerScreen } from './PlayerScreen';
 export { default as TracksScreen } from './TracksScreen';
 export { default as PlaylistsScreen } from './PlaylistsScreen';
 export { default as AlbumsScreen } from './AlbumsScreen';

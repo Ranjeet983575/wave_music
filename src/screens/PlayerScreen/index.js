@@ -24,9 +24,9 @@ import {
     saveFavorites,
     savePlaylists,
     scanDeviceMusic,
-} from '../data/musicLibrary';
-import { DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../data/playbackSettings';
-import AdvancedSettingsScreen from '../components/screens/AdvancedSettingsScreen';
+} from '../../data/musicLibrary';
+import { DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
+import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
 const C = {
     background: '#090B0A',

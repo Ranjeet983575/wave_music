@@ -1,7 +1,7 @@
 import React from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { APP_THEME } from '../../../constants/theme';
-import { Artwork, IconButton } from '../../common';
+import { APP_THEME } from '../../constants/theme';
+import { Artwork, IconButton } from '../../components/common';
 
 const C = APP_THEME;
 

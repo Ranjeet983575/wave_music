@@ -1,7 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { APP_THEME } from '../../../constants/theme';
+import { APP_THEME } from '../../constants/theme';
 
 const C = APP_THEME;
 

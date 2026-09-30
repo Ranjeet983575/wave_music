@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { APP_THEME } from '../../../constants/theme';
-import { IconButton, ToggleSwitch } from '../../common';
+import { APP_THEME } from '../../constants/theme';
+import { IconButton, ToggleSwitch } from '../../components/common';
 
 const C = APP_THEME;
 const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2];
