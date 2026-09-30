@@ -32,6 +32,13 @@ import WaveformVisualizer from '../../components/WaveformVisualizer';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
 const C = APP_THEME;
+const VolumeManager = (() => {
+    try {
+        return require('react-native-volume-manager').VolumeManager;
+    } catch {
+        return null;
+    }
+})();
 
 const TABS = [
     { key: 'Tracks', icon: 'musical-notes-outline' },
@@ -146,6 +153,7 @@ export default function PlayerScreen() {
     const [showQueue, setShowQueue] = useState(false);
     const [showVolume, setShowVolume] = useState(false);
     const [volume, setVolume] = useState(1);
+    const [volumePreview, setVolumePreview] = useState(null);
     const [volumeBarWidth, setVolumeBarWidth] = useState(1);
     const [trackOptionsTrack, setTrackOptionsTrack] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
@@ -267,15 +275,30 @@ export default function PlayerScreen() {
     }, [accent, appearanceSettingsReady, themeMode]);
 
     useEffect(() => {
+        if (!VolumeManager) return undefined;
+        let isMounted = true;
+        const syncDeviceVolume = (result) => {
+            if (!isMounted || !Number.isFinite(result?.volume)) return;
+            if (Platform.OS === 'android' && result.type && result.type !== 'music') return;
+            setVolume(Math.max(0, Math.min(1, result.volume)));
+        };
+
+        VolumeManager.getVolume().then(syncDeviceVolume).catch(() => { });
+        const subscription = VolumeManager.addVolumeListener(syncDeviceVolume);
+        return () => {
+            isMounted = false;
+            subscription.remove();
+        };
+    }, []);
+
+    useEffect(() => {
         if (!status.isLoaded) return;
         player.shouldCorrectPitch = advancedSettings.pitchCorrection;
         player.setPlaybackRate(advancedSettings.playbackRate);
     }, [advancedSettings.pitchCorrection, advancedSettings.playbackRate, player, status.isLoaded]);
 
     useEffect(() => {
-        const limitedVolume = Math.min(volume, advancedSettings.volumeLimit);
-        if (limitedVolume !== volume) setVolume(limitedVolume);
-        player.volume = limitedVolume;
+        player.volume = Math.min(volume, advancedSettings.volumeLimit);
     }, [advancedSettings.volumeLimit, player, volume]);
 
     useEffect(() => {
@@ -480,18 +503,35 @@ export default function PlayerScreen() {
         }
     }
 
-    function updateVolume(nextVolume) {
-        const next = Math.max(0, Math.min(advancedSettings.volumeLimit, nextVolume));
-        player.volume = next;
+    async function updateVolume(nextVolume) {
+        const next = Math.max(0, Math.min(1, nextVolume));
         setVolume(next);
+        setVolumePreview(null);
+        if (!VolumeManager) {
+            player.volume = Math.min(next, advancedSettings.volumeLimit);
+            return;
+        }
+        try {
+            await VolumeManager.setVolume(next, { showUI: false, playSound: false, type: 'music' });
+        } catch {
+            // Keep the custom volume control responsive if the native API is unavailable.
+        }
     }
 
     function updateAdvancedSetting(key, value) {
         setAdvancedSettings((current) => ({ ...current, [key]: value }));
     }
 
-    function onVolumePress(event) {
-        updateVolume(event.nativeEvent.locationX / volumeBarWidth);
+    function getVolumeRatio(event) {
+        return Math.max(0, Math.min(1, event.nativeEvent.locationX / Math.max(1, volumeBarWidth)));
+    }
+
+    function previewVolume(event) {
+        setVolumePreview(getVolumeRatio(event));
+    }
+
+    function commitVolume(event) {
+        updateVolume(getVolumeRatio(event));
     }
 
     function renderTrackList(items) {
@@ -1074,24 +1114,30 @@ export default function PlayerScreen() {
                                 <Pressable onPress={() => updateVolume(volume - 0.1)} style={styles.volumeStep} accessibilityRole="button" accessibilityLabel="Decrease volume">
                                     <Ionicons name="remove" size={20} color={C.text} />
                                 </Pressable>
-                                <Pressable
+                                <View
                                     onLayout={(event) => setVolumeBarWidth(event.nativeEvent.layout.width)}
-                                    onPress={onVolumePress}
+                                    onStartShouldSetResponder={() => true}
+                                    onMoveShouldSetResponder={() => true}
+                                    onResponderGrant={previewVolume}
+                                    onResponderMove={previewVolume}
+                                    onResponderRelease={commitVolume}
+                                    onResponderTerminationRequest={() => false}
+                                    onResponderTerminate={() => setVolumePreview(null)}
                                     accessibilityRole="adjustable"
                                     accessibilityLabel="Playback volume"
-                                    accessibilityValue={{ min: 0, max: 100, now: Math.round(volume * 100) }}
+                                    accessibilityValue={{ min: 0, max: 100, now: Math.round((volumePreview ?? volume) * 100) }}
                                     accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
-                                    onAccessibilityAction={(event) => updateVolume(volume + (event.nativeEvent.actionName === 'increment' ? 0.05 : -0.05))}
+                                    onAccessibilityAction={(event) => updateVolume((volumePreview ?? volume) + (event.nativeEvent.actionName === 'increment' ? 0.05 : -0.05))}
                                     style={styles.volumeBar}
                                 >
                                     <View style={styles.volumeBarBackground} />
-                                    <View style={[styles.volumeBarFill, { width: `${volume * 100}%`, backgroundColor: accent }]} />
-                                </Pressable>
+                                    <View style={[styles.volumeBarFill, { width: `${(volumePreview ?? volume) * 100}%`, backgroundColor: accent }]} />
+                                </View>
                                 <Pressable onPress={() => updateVolume(volume + 0.1)} style={styles.volumeStep} accessibilityRole="button" accessibilityLabel="Increase volume">
                                     <Ionicons name="add" size={20} color={C.text} />
                                 </Pressable>
                             </View>
-                            <Text style={styles.volumeValue}>{Math.round(volume * 100)}%</Text>
+                            <Text style={styles.volumeValue}>{Math.round((volumePreview ?? volume) * 100)}%</Text>
                             <Pressable onPress={() => setShowVolume(false)} style={styles.trackOptionsCancel}><Text style={styles.trackOptionsCancelText}>Done</Text></Pressable>
                         </View>
                     </View>
