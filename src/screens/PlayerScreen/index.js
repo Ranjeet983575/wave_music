@@ -25,7 +25,7 @@ import {
     savePlaylists,
     scanDeviceMusic,
 } from '../../data/musicLibrary';
-import { DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
+import { DEFAULT_EQ_LEVELS, DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
 import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceSettings, saveAppearanceSettings } from '../../data/appearanceSettings';
 import { ACCENT_COLORS, APP_THEME, LIGHT_THEME } from '../../constants/theme';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
@@ -168,7 +168,7 @@ export default function PlayerScreen() {
     const [settingsView, setSettingsView] = useState('main');
     const [advancedSettings, setAdvancedSettings] = useState(DEFAULT_PLAYBACK_SETTINGS);
     const [advancedSettingsReady, setAdvancedSettingsReady] = useState(false);
-    const [eqLevels, setEqLevels] = useState([0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7]);
+    const [eqLevels, setEqLevels] = useState(DEFAULT_EQ_LEVELS);
     const [selectedPreset, setSelectedPreset] = useState('Custom');
     const [selectedReverb, setSelectedReverb] = useState('Off');
     const [preamp, setPreamp] = useState(0);
@@ -204,6 +204,16 @@ export default function PlayerScreen() {
         loadPlaybackSettings().then((storedSettings) => {
             if (!isMounted) return;
             setAdvancedSettings(storedSettings);
+            setVolume(storedSettings.volume);
+            setEqualizerEnabled(storedSettings.equalizerEnabled);
+            setAudioFocusEnabled(storedSettings.audioFocusEnabled);
+            setLibraryAutoScan(storedSettings.libraryAutoScan);
+            setSmartImportEnabled(storedSettings.smartImportEnabled);
+            setEqLevels(storedSettings.eqLevels);
+            setSelectedPreset(storedSettings.selectedPreset);
+            setSelectedReverb(storedSettings.selectedReverb);
+            setPreamp(storedSettings.preamp);
+            setBassBoost(storedSettings.bassBoost);
             setAdvancedSettingsReady(true);
         });
         return () => { isMounted = false; };
@@ -221,8 +231,34 @@ export default function PlayerScreen() {
     }, []);
 
     useEffect(() => {
-        if (advancedSettingsReady) savePlaybackSettings(advancedSettings);
-    }, [advancedSettings, advancedSettingsReady]);
+        if (!advancedSettingsReady) return;
+        savePlaybackSettings({
+            ...advancedSettings,
+            volume,
+            equalizerEnabled,
+            audioFocusEnabled,
+            libraryAutoScan,
+            smartImportEnabled,
+            eqLevels,
+            selectedPreset,
+            selectedReverb,
+            preamp,
+            bassBoost,
+        });
+    }, [
+        advancedSettings,
+        advancedSettingsReady,
+        audioFocusEnabled,
+        bassBoost,
+        equalizerEnabled,
+        eqLevels,
+        libraryAutoScan,
+        preamp,
+        selectedPreset,
+        selectedReverb,
+        smartImportEnabled,
+        volume,
+    ]);
 
     useEffect(() => {
         if (appearanceSettingsReady) saveAppearanceSettings({ accent, themeMode });
