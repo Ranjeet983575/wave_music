@@ -159,6 +159,7 @@ export default function PlayerScreen() {
     const [error, setError] = useState('');
     const [autoPlay, setAutoPlay] = useState(false);
     const [scrubWidth, setScrubWidth] = useState(1);
+    const [scrubPreview, setScrubPreview] = useState(null);
     const [accent, setAccent] = useState(DEFAULT_APPEARANCE_SETTINGS.accent);
     const [themeMode, setThemeMode] = useState(DEFAULT_APPEARANCE_SETTINGS.themeMode);
     const [appearanceSettingsReady, setAppearanceSettingsReady] = useState(false);
@@ -457,11 +458,26 @@ export default function PlayerScreen() {
         return options;
     }
 
-    function onSeek(event) {
+    function getSeekRatio(event) {
+        return Math.min(1, Math.max(0, event.nativeEvent.locationX / Math.max(1, scrubWidth)));
+    }
+
+    function previewSeek(event) {
+        setScrubPreview(getSeekRatio(event));
+    }
+
+    async function commitSeek(event) {
         const duration = status.duration || activeTrack?.duration || 0;
         if (!duration) return;
-        const ratio = Math.min(1, Math.max(0, event.nativeEvent.locationX / scrubWidth));
-        player.seekTo(ratio * duration).catch(() => { });
+        const ratio = getSeekRatio(event);
+        setScrubPreview(ratio);
+        try {
+            await player.seekTo(ratio * duration);
+        } catch {
+            // Keep the last reported player position if seeking fails.
+        } finally {
+            setScrubPreview(null);
+        }
     }
 
     function updateVolume(nextVolume) {
@@ -946,6 +962,8 @@ export default function PlayerScreen() {
         if (!activeTrack) return null;
         const current = status.currentTime || 0;
         const duration = status.duration || activeTrack.duration || 1;
+        const progress = scrubPreview ?? Math.min(1, current / duration);
+        const displayedCurrent = progress * duration;
         return (
             <View style={styles.nowPlaying}>
                 <View style={styles.nowTop}>
@@ -967,12 +985,25 @@ export default function PlayerScreen() {
                     </View>
                     <IconButton name={favorites.includes(activeTrack.id) ? 'heart' : 'heart-outline'} color={favorites.includes(activeTrack.id) ? accent : C.secondary} size={25} onPress={() => toggleFavorite(activeTrack)} accessibilityLabel="Like track" />
                 </View>
-                <Pressable onLayout={(event) => setScrubWidth(event.nativeEvent.layout.width)} onPress={onSeek} style={styles.seekTrack}>
+                <View
+                    onLayout={(event) => setScrubWidth(event.nativeEvent.layout.width)}
+                    onStartShouldSetResponder={() => true}
+                    onMoveShouldSetResponder={() => true}
+                    onResponderGrant={previewSeek}
+                    onResponderMove={previewSeek}
+                    onResponderRelease={commitSeek}
+                    onResponderTerminationRequest={() => false}
+                    onResponderTerminate={() => setScrubPreview(null)}
+                    accessibilityRole="adjustable"
+                    accessibilityLabel="Playback position"
+                    accessibilityValue={{ min: 0, max: Math.round(duration), now: Math.round(displayedCurrent) }}
+                    style={styles.seekTrack}
+                >
                     <View style={styles.seekBackground} />
-                    <View style={[styles.seekProgress, { width: `${Math.min(100, (current / duration) * 100)}%`, backgroundColor: accent }]} />
-                    <View style={[styles.seekThumb, { left: `${Math.min(99, (current / duration) * 100)}%`, backgroundColor: accent }]} />
-                </Pressable>
-                <View style={styles.timeLabels}><Text style={styles.timeLabel}>{formatDuration(current)}</Text><Text style={styles.timeLabel}>{formatDuration(Math.max(0, duration - current))}</Text></View>
+                    <View style={[styles.seekProgress, { width: `${progress * 100}%`, backgroundColor: accent }]} />
+                    <View style={[styles.seekThumb, { left: `${Math.min(99, progress * 100)}%`, backgroundColor: accent }]} />
+                </View>
+                <View style={styles.timeLabels}><Text style={styles.timeLabel}>{formatDuration(displayedCurrent)}</Text><Text style={styles.timeLabel}>{formatDuration(Math.max(0, duration - displayedCurrent))}</Text></View>
                 {status.error ? <Text style={styles.playbackError}>{status.error}</Text> : null}
                 <View style={styles.transport}>
                     <IconButton name="play-skip-back" size={26} color={C.secondary} onPress={() => playNext(-1)} accessibilityLabel="Previous track" />
