@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { APP_THEME } from '../../constants/theme';
+import { APP_THEME, LIGHT_THEME } from '../../constants/theme';
 import { IconButton, ToggleSwitch } from '../../components/common';
 
 const C = APP_THEME;
@@ -21,9 +21,29 @@ export default function AdvancedSettingsScreen({
     onSetVolumeLimit,
     onReset,
     onBack,
+    isLightTheme,
 }) {
     const [sliderWidth, setSliderWidth] = useState(1);
     const volumePercent = Math.round(volumeLimit * 100);
+    const palette = isLightTheme ? LIGHT_THEME : APP_THEME;
+    const styles = isLightTheme ? {
+        ...baseStyles,
+        page: [baseStyles.page, { backgroundColor: palette.background }],
+        title: [baseStyles.title, { color: palette.text }],
+        intro: [baseStyles.intro, { color: palette.secondary }],
+        section: [baseStyles.section, { backgroundColor: palette.surface, borderColor: palette.border }],
+        sectionTitle: [baseStyles.sectionTitle, { color: palette.text }],
+        sectionDetail: [baseStyles.sectionDetail, { color: palette.secondary }],
+        rowIcon: [baseStyles.rowIcon, { backgroundColor: palette.surfaceRaised }],
+        rowTitle: [baseStyles.rowTitle, { color: palette.text }],
+        rowDetail: [baseStyles.rowDetail, { color: palette.secondary }],
+        divider: [baseStyles.divider, { backgroundColor: palette.border }],
+        rateButton: [baseStyles.rateButton, { backgroundColor: palette.surfaceRaised }],
+        rateText: [baseStyles.rateText, { color: palette.secondary }],
+        rateTextActive: [baseStyles.rateTextActive, { color: palette.text }],
+        sliderThumb: [baseStyles.sliderThumb, { backgroundColor: palette.surface }],
+        resetText: [baseStyles.resetText, { color: palette.secondary }],
+    } : baseStyles;
 
     function setVolumeFromEvent(event) {
         const ratio = Math.max(0, Math.min(1, event.nativeEvent.locationX / sliderWidth));
@@ -33,7 +53,7 @@ export default function AdvancedSettingsScreen({
     return (
         <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
             <View style={styles.header}>
-                <IconButton name="arrow-back" color={C.text} onPress={onBack} accessibilityLabel="Back to settings" />
+                <IconButton name="arrow-back" color={palette.text} onPress={onBack} accessibilityLabel="Back to settings" />
                 <Text style={styles.title}>Advanced settings</Text>
                 <View style={styles.headerSpacer} />
             </View>
@@ -121,14 +141,14 @@ export default function AdvancedSettingsScreen({
             </View>
 
             <Pressable onPress={onReset} style={styles.resetButton} accessibilityRole="button">
-                <Ionicons name="refresh-outline" size={17} color={C.secondary} />
+                <Ionicons name="refresh-outline" size={17} color={palette.secondary} />
                 <Text style={styles.resetText}>Restore defaults</Text>
             </Pressable>
         </ScrollView>
     );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
     page: { paddingHorizontal: 18, paddingBottom: 30 },
     header: { flexDirection: 'row', alignItems: 'center', paddingTop: 12, paddingBottom: 8 },
     title: { flex: 1, color: C.text, fontSize: 22, fontWeight: '700' },

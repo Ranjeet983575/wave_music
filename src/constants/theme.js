@@ -10,6 +10,29 @@ export const APP_THEME = {
     danger: '#F07E77',
 };
 
+export const LIGHT_THEME = {
+    background: '#F3F6F4',
+    surface: '#FFFFFF',
+    surfaceRaised: '#E8EEEA',
+    border: '#D5DED8',
+    green: '#248653',
+    text: '#17231C',
+    secondary: '#526159',
+    dim: '#77847C',
+    danger: '#C13F3A',
+};
+
+export const ACCENT_COLORS = [
+    APP_THEME.green,
+    '#43C5B4',
+    '#8BCAFF',
+    '#8795F7',
+    '#D2A7FF',
+    '#F07F9D',
+    '#FF9C83',
+    '#F2A24A'
+];
+
 export const TABS = [
     { key: 'Tracks', icon: 'musical-notes-outline' },
     { key: 'Playlists', icon: 'list-outline' },

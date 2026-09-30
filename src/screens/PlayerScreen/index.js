@@ -11,6 +11,7 @@ import {
     Text,
     TextInput,
     View,
+    useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -26,19 +27,11 @@ import {
     scanDeviceMusic,
 } from '../../data/musicLibrary';
 import { DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
+import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceSettings, saveAppearanceSettings } from '../../data/appearanceSettings';
+import { ACCENT_COLORS, APP_THEME, LIGHT_THEME } from '../../constants/theme';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
-const C = {
-    background: '#090B0A',
-    surface: '#141816',
-    surfaceRaised: '#1A201D',
-    border: '#262D29',
-    green: '#67E59B',
-    text: '#F2F5F3',
-    secondary: '#A0AAA4',
-    dim: '#68716C',
-    danger: '#F07E77',
-};
+const C = APP_THEME;
 
 const TABS = [
     { key: 'Tracks', icon: 'musical-notes-outline' },
@@ -87,28 +80,29 @@ function Artwork({ size = 58, iconSize, tint = C.green, rounded = 15 }) {
     );
 }
 
-function TrackRow({ track, index, onPress, onMore, favorite, onFavorite }) {
+function TrackRow({ track, index, onPress, onMore, favorite, onFavorite, stylesOverride, accentColor = C.green, secondaryColor = C.secondary }) {
+    const rowStyles = stylesOverride || styles;
     return (
-        <View style={styles.trackRow}>
-            <Pressable onPress={onPress} style={styles.trackMain} accessibilityRole="button" accessibilityLabel={`Play ${track.title}`}>
-                <Artwork size={56} />
-                <View style={styles.trackText}>
-                    <Text numberOfLines={1} style={styles.trackTitle}>{track.title}</Text>
-                    <Text numberOfLines={1} style={styles.trackSubtitle}>{track.artist}  ·  {track.album}</Text>
+        <View style={rowStyles.trackRow}>
+            <Pressable onPress={onPress} style={rowStyles.trackMain} accessibilityRole="button" accessibilityLabel={`Play ${track.title}`}>
+                <Artwork size={56} tint={accentColor} />
+                <View style={rowStyles.trackText}>
+                    <Text numberOfLines={1} style={rowStyles.trackTitle}>{track.title}</Text>
+                    <Text numberOfLines={1} style={rowStyles.trackSubtitle}>{track.artist}  ·  {track.album}</Text>
                 </View>
             </Pressable>
-            <View style={styles.trackMeta}>
-                <Text style={styles.trackDuration}>{track.duration ? formatDuration(track.duration) : '--:--'}</Text>
+            <View style={rowStyles.trackMeta}>
+                <Text style={rowStyles.trackDuration}>{track.duration ? formatDuration(track.duration) : '--:--'}</Text>
                 {favorite ? <IconButton
                     name="heart"
-                    color={C.green}
+                    color={accentColor}
                     size={20}
                     onPress={onFavorite}
                     accessibilityLabel="Remove from favorites"
                 /> : null}
                 <IconButton
                     name="ellipsis-horizontal"
-                    color={C.secondary}
+                    color={secondaryColor}
                     size={20}
                     onPress={onMore}
                     accessibilityLabel="Track options"
@@ -118,22 +112,23 @@ function TrackRow({ track, index, onPress, onMore, favorite, onFavorite }) {
     );
 }
 
-function EmptyState({ icon, title, detail, action, onAction, busy, busyText = 'Scanning library', secondaryAction, onSecondaryAction }) {
+function EmptyState({ icon, title, detail, action, onAction, busy, busyText = 'Scanning library', secondaryAction, onSecondaryAction, stylesOverride, accentColor = C.green }) {
+    const emptyStyles = stylesOverride || styles;
     return (
-        <View style={styles.emptyState}>
-            <View style={styles.emptyIcon}><Ionicons name={icon} size={34} color={C.green} /></View>
-            <Text style={styles.emptyTitle}>{title}</Text>
-            <Text style={styles.emptyDetail}>{detail}</Text>
+        <View style={emptyStyles.emptyState}>
+            <View style={emptyStyles.emptyIcon}><Ionicons name={icon} size={34} color={accentColor} /></View>
+            <Text style={emptyStyles.emptyTitle}>{title}</Text>
+            <Text style={emptyStyles.emptyDetail}>{detail}</Text>
             {action ? (
-                <Pressable onPress={onAction} style={styles.primaryButton}>
+                <Pressable onPress={onAction} style={emptyStyles.primaryButton}>
                     {busy ? <ActivityIndicator color={C.background} /> : <Ionicons name="scan-outline" size={18} color={C.background} />}
-                    <Text style={styles.primaryButtonText}>{busy ? busyText : action}</Text>
+                    <Text style={emptyStyles.primaryButtonText}>{busy ? busyText : action}</Text>
                 </Pressable>
             ) : null}
             {secondaryAction ? (
-                <Pressable onPress={onSecondaryAction} style={styles.secondaryButton}>
-                    <Ionicons name="folder-open-outline" size={17} color={C.green} />
-                    <Text style={styles.secondaryButtonText}>{secondaryAction}</Text>
+                <Pressable onPress={onSecondaryAction} style={emptyStyles.secondaryButton}>
+                    <Ionicons name="folder-open-outline" size={17} color={accentColor} />
+                    <Text style={emptyStyles.secondaryButtonText}>{secondaryAction}</Text>
                 </Pressable>
             ) : null}
         </View>
@@ -164,8 +159,9 @@ export default function PlayerScreen() {
     const [error, setError] = useState('');
     const [autoPlay, setAutoPlay] = useState(false);
     const [scrubWidth, setScrubWidth] = useState(1);
-    const [accent, setAccent] = useState(C.green);
-    const [themeMode, setThemeMode] = useState('Dark');
+    const [accent, setAccent] = useState(DEFAULT_APPEARANCE_SETTINGS.accent);
+    const [themeMode, setThemeMode] = useState(DEFAULT_APPEARANCE_SETTINGS.themeMode);
+    const [appearanceSettingsReady, setAppearanceSettingsReady] = useState(false);
     const [equalizerEnabled, setEqualizerEnabled] = useState(true);
     const [audioFocusEnabled, setAudioFocusEnabled] = useState(true);
     const [libraryAutoScan, setLibraryAutoScan] = useState(true);
@@ -184,6 +180,10 @@ export default function PlayerScreen() {
     const player = useAudioPlayer(activeTrack?.uri || null, { updateInterval: 400 });
     const status = useAudioPlayerStatus(player);
     const completedTrackRef = useRef(null);
+    const deviceColorScheme = useColorScheme();
+    const isLightTheme = themeMode === 'Light' || (themeMode === 'System' && deviceColorScheme === 'light');
+    const C = useMemo(() => ({ ...(isLightTheme ? LIGHT_THEME : APP_THEME), green: accent }), [accent, isLightTheme]);
+    const styles = useMemo(() => createAppearanceStyles(C, isLightTheme), [C, isLightTheme]);
 
     useEffect(() => {
         setAudioModeAsync({ playsInSilentMode: true }).catch(() => { });
@@ -212,8 +212,23 @@ export default function PlayerScreen() {
     }, []);
 
     useEffect(() => {
+        let isMounted = true;
+        loadAppearanceSettings().then((storedSettings) => {
+            if (!isMounted) return;
+            setAccent(storedSettings.accent);
+            setThemeMode(storedSettings.themeMode);
+            setAppearanceSettingsReady(true);
+        });
+        return () => { isMounted = false; };
+    }, []);
+
+    useEffect(() => {
         if (advancedSettingsReady) savePlaybackSettings(advancedSettings);
     }, [advancedSettings, advancedSettingsReady]);
+
+    useEffect(() => {
+        if (appearanceSettingsReady) saveAppearanceSettings({ accent, themeMode });
+    }, [accent, appearanceSettingsReady, themeMode]);
 
     useEffect(() => {
         if (!status.isLoaded) return;
@@ -428,6 +443,9 @@ export default function PlayerScreen() {
                         onMore={() => showTrackOptions(item)}
                         favorite={favorites.includes(item.id)}
                         onFavorite={() => toggleFavorite(item)}
+                        stylesOverride={styles}
+                        accentColor={C.green}
+                        secondaryColor={C.secondary}
                     />
                 )}
                 contentContainerStyle={styles.trackListContent}
@@ -441,6 +459,8 @@ export default function PlayerScreen() {
                         onAction={scanLibrary}
                         secondaryAction={!loading && !error ? 'Import from Files' : undefined}
                         onSecondaryAction={importMusicFiles}
+                        stylesOverride={styles}
+                        accentColor={C.green}
                     />
                 )}
             />
@@ -449,10 +469,10 @@ export default function PlayerScreen() {
 
     function renderTracks() {
         if (loading && tracks.length === 0) {
-            return <EmptyState icon="radio-outline" title="Finding your music" detail="Scanning audio stored on this device." busy />;
+            return <EmptyState icon="radio-outline" title="Finding your music" detail="Scanning audio stored on this device." busy stylesOverride={styles} accentColor={C.green} />;
         }
         if (permissionGranted === false && tracks.length === 0) {
-            return <EmptyState icon="lock-closed-outline" title="Music access is off" detail="Allow audio access to scan the device library, or import individual songs from Files." action="Request access" onAction={scanLibrary} secondaryAction="Import from Files" onSecondaryAction={importMusicFiles} />;
+            return <EmptyState icon="lock-closed-outline" title="Music access is off" detail="Allow audio access to scan the device library, or import individual songs from Files." action="Request access" onAction={scanLibrary} secondaryAction="Import from Files" onSecondaryAction={importMusicFiles} stylesOverride={styles} accentColor={C.green} />;
         }
         return (
             <>
@@ -519,7 +539,7 @@ export default function PlayerScreen() {
                 </Pressable>
                 {playlists.map((playlist, index) => (
                     <Pressable key={playlist.id} style={styles.playlistRow} onPress={() => setSelectedPlaylist(playlist)}>
-                        <Artwork size={62} tint={index % 2 ? '#D2A7FF' : '#83C9F4'} />
+                        <Artwork size={62} tint={index % 2 ? '#D2A7FF' : C.green} />
                         <View style={styles.flexOne}><Text style={styles.cardTitle}>{playlist.name}</Text><Text style={styles.cardSub}>{playlist.trackIds.length} songs</Text></View>
                         <IconButton name="ellipsis-horizontal" color={C.secondary} onPress={() => Alert.alert(playlist.name, 'Remove this playlist?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { const next = playlists.filter((item) => item.id !== playlist.id); setPlaylists(next); await savePlaylists(next); } }])} />
                     </Pressable>
@@ -550,7 +570,7 @@ export default function PlayerScreen() {
                         ))}
                     </View>
                 ) : (
-                    <EmptyState icon="albums-outline" title="No albums yet" detail="Scan your device music library to find albums." action="Scan device" onAction={scanLibrary} busy={loading} />
+                    <EmptyState icon="albums-outline" title="No albums yet" detail="Scan your device music library to find albums." action="Scan device" onAction={scanLibrary} busy={loading} stylesOverride={styles} accentColor={C.green} />
                 )}
             </ScrollView>
         );
@@ -596,7 +616,7 @@ export default function PlayerScreen() {
 
     function renderSettings() {
         const themeOptions = ['Light', 'Dark', 'System'];
-        const accentOptions = [C.green, '#8BCAFF', '#D2A7FF', '#FF9C83', '#FFD36D'];
+        const accentOptions = ACCENT_COLORS;
         const frequencies = [31, 62, 125, 250, 500, 1, 2, 4, 8, 16];
         const presetMap = {
             Custom: [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7],
@@ -654,6 +674,7 @@ export default function PlayerScreen() {
                     onSetVolumeLimit={(limit) => updateAdvancedSetting('volumeLimit', Math.max(0.3, Math.min(1, limit)))}
                     onReset={() => setAdvancedSettings(DEFAULT_PLAYBACK_SETTINGS)}
                     onBack={() => setSettingsView('main')}
+                    isLightTheme={isLightTheme}
                 />
             );
         }
@@ -792,7 +813,7 @@ export default function PlayerScreen() {
                             <Text style={styles.settingRowTitle}>Audio focus</Text>
                             <Text style={styles.settingRowDescription}>{audioFocusEnabled ? 'Adaptive volume on' : 'Adaptive volume off'}</Text>
                         </View>
-                        <ToggleSwitch enabled={audioFocusEnabled} onToggle={() => setAudioFocusEnabled((value) => !value)} />
+                        <ToggleSwitch enabled={audioFocusEnabled} onToggle={() => setAudioFocusEnabled((value) => !value)} activeColor={C.green} />
                     </Pressable>
                 </View>
 
@@ -815,6 +836,9 @@ export default function PlayerScreen() {
                         {accentOptions.map((color) => (
                             <Pressable
                                 key={color}
+                                accessibilityRole="radio"
+                                accessibilityLabel={`Accent color ${color}`}
+                                accessibilityState={{ checked: accent === color }}
                                 onPress={() => setAccent(color)}
                                 style={[styles.accentSwatch, { backgroundColor: color }, accent === color && styles.accentSelected]}
                             />
@@ -841,7 +865,7 @@ export default function PlayerScreen() {
                             <Text style={styles.settingRowTitle}>Auto scan</Text>
                             <Text style={styles.settingRowDescription}>{libraryAutoScan ? 'On' : 'Off'}</Text>
                         </View>
-                        <ToggleSwitch enabled={libraryAutoScan} onToggle={() => setLibraryAutoScan((value) => !value)} />
+                        <ToggleSwitch enabled={libraryAutoScan} onToggle={() => setLibraryAutoScan((value) => !value)} activeColor={C.green} />
                     </Pressable>
 
                     <Pressable style={styles.settingRow} onPress={() => setSmartImportEnabled((value) => !value)}>
@@ -850,7 +874,7 @@ export default function PlayerScreen() {
                             <Text style={styles.settingRowTitle}>Smart import</Text>
                             <Text style={styles.settingRowDescription}>{smartImportEnabled ? 'Organize automatically' : 'Ask before importing'}</Text>
                         </View>
-                        <ToggleSwitch enabled={smartImportEnabled} onToggle={() => setSmartImportEnabled((value) => !value)} />
+                        <ToggleSwitch enabled={smartImportEnabled} onToggle={() => setSmartImportEnabled((value) => !value)} activeColor={C.green} />
                     </Pressable>
 
                     <Pressable style={styles.settingRow} onPress={importMusicFiles}>
@@ -1133,7 +1157,7 @@ const styles = StyleSheet.create({
     segmentText: { fontSize: 12, fontWeight: '700', color: '#D7DDD9', letterSpacing: 0.7 },
     segmentTextActive: { color: '#0B120F' },
     inlineLabel: { color: '#A9B3AE', fontSize: 11, fontWeight: '700', letterSpacing: 1.1, textTransform: 'uppercase', paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
-    accentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingBottom: 12 },
+    accentRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingBottom: 12 },
     accentSwatch: { width: 30, height: 30, borderRadius: 8, borderWidth: 2, borderColor: 'transparent' },
     accentSelected: { borderColor: '#F3F5F2', transform: [{ scale: 1.08 }] },
     eqVisualWrap: { marginTop: 8, marginBottom: 12, paddingTop: 12, paddingBottom: 10, borderRadius: 18, backgroundColor: '#0F1412' },
@@ -1176,7 +1200,7 @@ const styles = StyleSheet.create({
     albumCard: { width: '48%', marginBottom: 22 },
     albumTitle: { color: C.text, fontSize: 13, fontWeight: '600', marginTop: 10 },
     settingLabel: { color: C.dim, fontSize: 10, fontWeight: '700', letterSpacing: 1.35, marginTop: 18, marginBottom: 10 },
-    accentRow: { flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 4 },
+    accentRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 13, paddingVertical: 4 },
     accentSwatch: { width: 31, height: 31, borderRadius: 16 },
     accentSelected: { borderWidth: 3, borderColor: C.text, transform: [{ scale: 1.08 }] },
     settingCard: { minHeight: 72, paddingHorizontal: 12, borderRadius: 15, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, flexDirection: 'row', alignItems: 'center', gap: 12 },
@@ -1248,3 +1272,121 @@ const styles = StyleSheet.create({
     cancelButton: { minHeight: 43, justifyContent: 'center', paddingHorizontal: 14 },
     cancelText: { color: C.secondary, fontSize: 13, fontWeight: '600' },
 });
+
+function createAppearanceStyles(palette, isLightTheme) {
+    const overrides = {
+        brandDot: { backgroundColor: palette.green },
+        importButtonText: { color: palette.green },
+        shuffleButton: { backgroundColor: palette.green },
+        primaryButton: { backgroundColor: palette.green },
+        secondaryButtonText: { color: palette.green },
+        togglePillActive: { backgroundColor: palette.green },
+        segmentButtonActive: { backgroundColor: palette.green },
+        eqBarFill: { backgroundColor: palette.green },
+        savePresetText: { color: palette.green },
+        presetChipActive: { backgroundColor: palette.green },
+        presetTextActive: { color: palette.text },
+        segmentTextActive: { color: palette.text },
+        sliderFill: { backgroundColor: palette.green },
+        addButton: { backgroundColor: palette.green },
+        favoriteArt: { backgroundColor: palette.green },
+        smallActionText: { color: palette.green },
+        modalEyebrow: { color: palette.green },
+    };
+
+    if (isLightTheme) {
+        Object.assign(overrides, {
+            screen: { backgroundColor: palette.background },
+            topBar: { borderBottomColor: palette.border },
+            brandName: { color: palette.text },
+            brandCaption: { color: palette.dim },
+            searchToggle: { backgroundColor: palette.surface, borderColor: palette.border },
+            searchField: { backgroundColor: palette.surface },
+            searchInput: { color: palette.text },
+            trackRow: { borderBottomColor: palette.border },
+            trackTitle: { color: palette.text },
+            trackSubtitle: { color: palette.secondary },
+            trackDuration: { color: palette.dim },
+            emptyIcon: { backgroundColor: palette.surfaceRaised },
+            emptyTitle: { color: palette.text },
+            emptyDetail: { color: palette.secondary },
+            secondaryButton: { borderColor: palette.border },
+            eyebrow: { color: palette.dim },
+            heroTitle: { color: palette.text },
+            trackCount: { color: palette.secondary },
+            favoritePlaylist: { backgroundColor: palette.surface, borderWidth: 1, borderColor: palette.border },
+            playlistRow: { borderBottomColor: palette.border },
+            cardTitle: { color: palette.text },
+            cardSub: { color: palette.secondary },
+            albumTitle: { color: palette.text },
+            settingsHeaderTitle: { color: palette.text },
+            headerBackButton: { backgroundColor: palette.surfaceRaised, borderColor: palette.border },
+            headerActionBadge: { backgroundColor: palette.surfaceRaised, borderColor: palette.border },
+            settingsSection: { backgroundColor: palette.surface, borderColor: palette.border },
+            sectionCaption: { color: palette.secondary },
+            settingRowIcon: { backgroundColor: palette.surfaceRaised, borderColor: palette.border },
+            settingRowTitle: { color: palette.text },
+            settingRowDescription: { color: palette.secondary },
+            segmentedRow: { backgroundColor: palette.surfaceRaised },
+            segmentText: { color: palette.text },
+            segmentTextActive: { color: palette.text },
+            inlineLabel: { color: palette.secondary },
+            accentSelected: { borderColor: palette.text },
+            settingCard: { backgroundColor: palette.surface, borderColor: palette.border },
+            settingIcon: { backgroundColor: palette.surfaceRaised },
+            smallAction: { backgroundColor: palette.surfaceRaised },
+            eqVisualWrap: { backgroundColor: palette.surface },
+            eqValue: { color: palette.secondary },
+            eqBarTrack: { backgroundColor: palette.surfaceRaised },
+            eqFreq: { color: palette.secondary },
+            presetTitle: { color: palette.text },
+            savePresetButton: { backgroundColor: palette.surfaceRaised },
+            presetChip: { backgroundColor: palette.surface, borderColor: palette.border },
+            presetText: { color: palette.text },
+            sliderValue: { color: palette.text },
+            sliderTrack: { backgroundColor: palette.surfaceRaised },
+            sliderThumb: { backgroundColor: palette.surface, borderColor: palette.secondary },
+            miniPlayer: { backgroundColor: palette.surface, borderColor: palette.border },
+            miniTitle: { color: palette.text },
+            miniSubtitle: { color: palette.secondary },
+            tabBar: { backgroundColor: palette.surface, borderTopColor: palette.border },
+            tabText: { color: palette.dim },
+            nowPlaying: { backgroundColor: palette.background },
+            headerIcon: { backgroundColor: palette.surface, borderColor: palette.border },
+            nowEyebrow: { color: palette.text },
+            nowContext: { color: palette.dim },
+            artworkIndexText: { color: palette.secondary },
+            nowTitle: { color: palette.text },
+            seekBackground: { backgroundColor: palette.border },
+            timeLabel: { color: palette.dim },
+            nowFooter: { borderTopColor: palette.border },
+            nowFooterText: { color: palette.secondary },
+            utilityModal: { backgroundColor: palette.surface, borderColor: palette.border },
+            utilityTitle: { color: palette.text },
+            queueItem: { borderTopColor: palette.border },
+            queueTrackTitle: { color: palette.text },
+            queueTrackArtist: { color: palette.secondary },
+            queueEmpty: { color: palette.secondary },
+            volumeStep: { backgroundColor: palette.surfaceRaised },
+            volumeBarBackground: { backgroundColor: palette.border },
+            volumeValue: { color: palette.secondary },
+            createModal: { backgroundColor: palette.surface, borderColor: palette.border },
+            trackOptionsModal: { backgroundColor: palette.surface, borderColor: palette.border },
+            trackOptionsTitle: { color: palette.text },
+            trackOptionsSubtitle: { color: palette.secondary },
+            trackOption: { borderTopColor: palette.border },
+            trackOptionText: { color: palette.text },
+            trackOptionsCancel: { backgroundColor: palette.surfaceRaised },
+            trackOptionsCancelText: { color: palette.text },
+            modalTitle: { color: palette.text },
+            playlistInput: { color: palette.text, backgroundColor: palette.surfaceRaised, borderColor: palette.border },
+            cancelText: { color: palette.secondary },
+        });
+    }
+
+    const themedStyles = { ...styles };
+    Object.entries(overrides).forEach(([key, override]) => {
+        themedStyles[key] = [styles[key], override];
+    });
+    return themedStyles;
+}

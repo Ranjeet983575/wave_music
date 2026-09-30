@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { APP_THEME } from '../../constants/theme';
+import { ACCENT_COLORS, APP_THEME } from '../../constants/theme';
 import { ToggleSwitch } from '../../components/common';
 
 const C = APP_THEME;
@@ -28,7 +28,7 @@ export default function SettingsScreen({
   onImportMusicFiles,
 }) {
   const themeOptions = ['Light', 'Dark', 'System'];
-  const accentOptions = [C.green, '#8BCAFF', '#D2A7FF', '#FF9C83', '#FFD36D'];
+  const accentOptions = ACCENT_COLORS;
 
   return (
     <ScrollView contentContainerStyle={styles.settingsPage} showsVerticalScrollIndicator={false}>
@@ -88,6 +88,9 @@ export default function SettingsScreen({
           {accentOptions.map((color) => (
             <Pressable
               key={color}
+              accessibilityRole="radio"
+              accessibilityLabel={`Accent color ${color}`}
+              accessibilityState={{ checked: accent === color }}
               onPress={() => setAccent(color)}
               style={[styles.accentSwatch, { backgroundColor: color }, accent === color && styles.accentSelected]}
             />
@@ -161,7 +164,7 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 12, fontWeight: '700', color: '#D7DDD9', letterSpacing: 0.7 },
   segmentTextActive: { color: '#0B120F' },
   inlineLabel: { color: '#A9B3AE', fontSize: 11, fontWeight: '700', letterSpacing: 1.1, textTransform: 'uppercase', paddingHorizontal: 10, paddingTop: 8, paddingBottom: 8 },
-  accentRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingBottom: 12 },
+  accentRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: 12, paddingHorizontal: 10, paddingBottom: 12 },
   accentSwatch: { width: 30, height: 30, borderRadius: 8, borderWidth: 2, borderColor: 'transparent' },
   accentSelected: { borderColor: '#F3F5F2', transform: [{ scale: 1.08 }] },
   settingCard: { minHeight: 72, paddingHorizontal: 12, marginHorizontal: 4, borderRadius: 16, backgroundColor: '#1A201D', borderWidth: 1, borderColor: '#2A302E', flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },

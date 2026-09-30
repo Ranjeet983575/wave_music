@@ -1,1 +1,1 @@
-export { APP_THEME, EQ_FREQUENCIES, PRESET_MAP, TABS } from './theme';
+export { ACCENT_COLORS, APP_THEME, EQ_FREQUENCIES, LIGHT_THEME, PRESET_MAP, TABS } from './theme';
