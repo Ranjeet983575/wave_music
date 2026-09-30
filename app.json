@@ -31,7 +31,28 @@
           "enableBackgroundPlayback": false
         }
       ],
-      "expo-splash-screen",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": false,
+          "granularPermissions": [
+            "audio"
+          ]
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#101412",
+          "android": {
+            "backgroundColor": "#101412"
+          },
+          "ios": {
+            "backgroundColor": "#101412"
+          }
+        }
+      ],
       "expo-status-bar"
     ]
   }
