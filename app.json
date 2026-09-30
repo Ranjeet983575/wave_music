@@ -1,0 +1,38 @@
+{
+  "expo": {
+    "name": "Wave Music",
+    "slug": "wave_music",
+    "version": "1.0.0",
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "9fb14626-c607-44fb-a7a3-35d8bd840022"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "y",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.ranjeet983575.wave_music"
+    },
+    "plugins": [
+      "expo-asset",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ],
+      "expo-splash-screen",
+      "expo-status-bar"
+    ]
+  }
+}
