@@ -10,7 +10,7 @@ export const DEFAULT_APPEARANCE_SETTINGS = {
 
 function normalizeSettings(value) {
     return {
-        themeMode: ['Light', 'Dark', 'System'].includes(value.themeMode)
+        themeMode: ['Light', 'Dark'].includes(value.themeMode)
             ? value.themeMode
             : DEFAULT_APPEARANCE_SETTINGS.themeMode,
         accent: ACCENT_COLORS.includes(value.accent) ? value.accent : DEFAULT_APPEARANCE_SETTINGS.accent,

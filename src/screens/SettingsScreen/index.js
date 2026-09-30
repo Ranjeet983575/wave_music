@@ -27,7 +27,7 @@ export default function SettingsScreen({
   onScanLibrary,
   onImportMusicFiles,
 }) {
-  const themeOptions = ['Light', 'Dark', 'System'];
+  const themeOptions = ['Light', 'Dark'];
   const accentOptions = ACCENT_COLORS;
 
   return (

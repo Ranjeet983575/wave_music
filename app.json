@@ -3,6 +3,7 @@
     "name": "Wave Music",
     "slug": "wave_music",
     "version": "1.0.0",
+    "userInterfaceStyle": "automatic",
     "platforms": [
       "ios",
       "android"

@@ -11,7 +11,6 @@ import {
     Text,
     TextInput,
     View,
-    useColorScheme,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -180,8 +179,7 @@ export default function PlayerScreen() {
     const player = useAudioPlayer(activeTrack?.uri || null, { updateInterval: 400 });
     const status = useAudioPlayerStatus(player);
     const completedTrackRef = useRef(null);
-    const deviceColorScheme = useColorScheme();
-    const isLightTheme = themeMode === 'Light' || (themeMode === 'System' && deviceColorScheme === 'light');
+    const isLightTheme = themeMode === 'Light';
     const C = useMemo(() => ({ ...(isLightTheme ? LIGHT_THEME : APP_THEME), green: accent }), [accent, isLightTheme]);
     const styles = useMemo(() => createAppearanceStyles(C, isLightTheme), [C, isLightTheme]);
 
@@ -615,7 +613,7 @@ export default function PlayerScreen() {
     }
 
     function renderSettings() {
-        const themeOptions = ['Light', 'Dark', 'System'];
+        const themeOptions = ['Light', 'Dark'];
         const accentOptions = ACCENT_COLORS;
         const frequencies = [31, 62, 125, 250, 500, 1, 2, 4, 8, 16];
         const presetMap = {
