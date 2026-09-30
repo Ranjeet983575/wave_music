@@ -201,13 +201,31 @@ export default function PlayerScreen() {
     const styles = useMemo(() => createAppearanceStyles(C, isLightTheme), [C, isLightTheme]);
 
     useEffect(() => {
-        setAudioModeAsync({ playsInSilentMode: true }).catch(() => { });
+        setAudioModeAsync({
+            playsInSilentMode: true,
+            shouldPlayInBackground: true,
+            interruptionMode: 'doNotMix',
+        }).catch(() => { });
         Promise.all([loadPlaylists(), loadFavorites()]).then(([storedPlaylists, storedFavorites]) => {
             setPlaylists(storedPlaylists);
             setFavorites(storedFavorites);
         });
         scanLibrary();
     }, []);
+
+    useEffect(() => {
+        if (!player) return;
+        if (!activeTrack) {
+            player.setActiveForLockScreen(false);
+            return;
+        }
+        player.setActiveForLockScreen(true, {
+            title: activeTrack.title,
+            artist: activeTrack.artist,
+            albumTitle: activeTrack.album,
+            artworkUrl: activeTrack.artworkUri || undefined,
+        });
+    }, [activeTrack, player]);
 
     useEffect(() => {
         if (autoPlay && status.isLoaded) {
@@ -694,9 +712,6 @@ export default function PlayerScreen() {
             { title: 'Android', subtitle: 'Android iOS file share', icon: 'phone-portrait-outline', color: '#20C875', message: 'Use Files to select audio stored on this device.' },
             { title: 'Files', subtitle: 'Import tracks from files', icon: 'folder', color: '#58AEFF', onPress: importMusicFiles },
             { title: 'Apple Music', subtitle: 'Import tracks from apple music', icon: 'musical-note', color: '#E85A9B', message: 'Apple Music tracks cannot be imported directly. Choose audio files from Files.' },
-            { title: 'Dropbox', subtitle: 'Tap to sign in', icon: 'logo-dropbox', color: '#3987FF', message: 'Dropbox import is not available yet.' },
-            { title: 'Google Drive', subtitle: 'Tap to sign in', icon: 'triangle-outline', color: '#4A9C69', message: 'Google Drive import is not available yet.' },
-            { title: 'OneDrive', subtitle: 'Tap to sign in', icon: 'cloud', color: '#2878E8', message: 'OneDrive import is not available yet.' },
         ];
         return (
             <ScrollView contentContainerStyle={styles.importPage}>
