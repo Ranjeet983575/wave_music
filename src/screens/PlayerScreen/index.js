@@ -3,6 +3,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Image,
     Modal,
     Pressable,
     Platform,
@@ -78,11 +79,17 @@ function ToggleSwitch({ enabled, onToggle, activeColor = C.green }) {
     );
 }
 
-function Artwork({ size = 58, iconSize, tint = C.green, rounded = 15 }) {
+function Artwork({ size = 58, iconSize, tint = C.green, rounded = 15, uri }) {
     return (
         <View style={[styles.artwork, { width: size, height: size, borderRadius: rounded }]}>
-            <View style={styles.artworkGlow} />
-            <Ionicons name="musical-notes" size={iconSize || size * 0.46} color={tint} />
+            {uri ? (
+                <Image source={{ uri }} style={styles.artworkImage} resizeMode="cover" />
+            ) : (
+                <>
+                    <View style={styles.artworkGlow} />
+                    <Ionicons name="musical-notes" size={iconSize || size * 0.46} color={tint} />
+                </>
+            )}
         </View>
     );
 }
@@ -92,7 +99,7 @@ function TrackRow({ track, index, onPress, onMore, favorite, onFavorite, stylesO
     return (
         <View style={rowStyles.trackRow}>
             <Pressable onPress={onPress} style={rowStyles.trackMain} accessibilityRole="button" accessibilityLabel={`Play ${track.title}`}>
-                <Artwork size={56} tint={accentColor} />
+                <Artwork size={56} tint={accentColor} uri={track.artworkUri} />
                 <View style={rowStyles.trackText}>
                     <Text numberOfLines={1} style={rowStyles.trackTitle}>{track.title}</Text>
                     <Text numberOfLines={1} style={rowStyles.trackSubtitle}>{track.artist}  ·  {track.album}</Text>
@@ -1013,9 +1020,15 @@ export default function PlayerScreen() {
                 </View>
                 <View style={styles.largeArtworkFrame}>
                     <View style={[styles.largeArtwork, { borderColor: `${accent}35` }]}>
-                        <View style={[styles.largeArtworkGlow, { backgroundColor: accent }]} />
-                        <Ionicons name="musical-notes" size={112} color={accent} />
-                        <View style={styles.artworkIndex}><Text style={styles.artworkIndexText}>W</Text></View>
+                        {activeTrack.artworkUri ? (
+                            <Image source={{ uri: activeTrack.artworkUri }} style={styles.largeArtworkImage} resizeMode="cover" />
+                        ) : (
+                            <>
+                                <View style={[styles.largeArtworkGlow, { backgroundColor: accent }]} />
+                                <Ionicons name="musical-notes" size={112} color={accent} />
+                                <View style={styles.artworkIndex}><Text style={styles.artworkIndexText}>W</Text></View>
+                            </>
+                        )}
                     </View>
                 </View>
                 <View style={styles.nowInfo}>
@@ -1164,7 +1177,7 @@ export default function PlayerScreen() {
             </View>
             {activeTrack ? (
                 <Pressable style={styles.miniPlayer} onPress={() => setShowNowPlaying(true)} accessibilityRole="button" accessibilityLabel="Open now playing">
-                    <Artwork size={44} iconSize={21} rounded={12} tint={accent} />
+                    <Artwork size={44} iconSize={21} rounded={12} tint={accent} uri={activeTrack.artworkUri} />
                     <View style={styles.miniText}><Text numberOfLines={1} style={styles.miniTitle}>{activeTrack.title}</Text><Text numberOfLines={1} style={styles.miniSubtitle}>{activeTrack.artist}</Text></View>
                     <IconButton name={status.playing ? 'pause' : 'play'} color={accent} size={23} onPress={togglePlay} accessibilityLabel={status.playing ? 'Pause' : 'Play'} />
                     <IconButton name="play-skip-forward" color={C.text} size={21} onPress={() => playNext(1)} accessibilityLabel="Next track" />

@@ -3,6 +3,14 @@ import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
 import * as MediaLibrary from 'expo-media-library';
 
+const MusicFiles = (() => {
+    try {
+        return require('react-native-get-music-files');
+    } catch {
+        return null;
+    }
+})();
+
 const PLAYLISTS_KEY = '@wave-music/playlists-v1';
 const FAVORITES_KEY = '@wave-music/favorites-v1';
 const IMPORTED_TRACKS_KEY = '@wave-music/imported-tracks-v1';
@@ -30,6 +38,66 @@ async function albumNameForAsset(asset) {
     } catch {
         return 'Singles';
     }
+}
+
+function filenameKey(value) {
+    const filename = String(value || '').split(/[\\/]/).pop() || '';
+    try {
+        return decodeURIComponent(filename).trim().toLocaleLowerCase();
+    } catch {
+        return filename.trim().toLocaleLowerCase();
+    }
+}
+
+function normalizeArtworkUri(value) {
+    if (!value || typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (trimmed.startsWith('data:') || trimmed.startsWith('file:') || trimmed.startsWith('content:') || /^https?:\/\//i.test(trimmed)) {
+        return trimmed;
+    }
+    return `data:image/jpeg;base64,${trimmed}`;
+}
+
+function artworkKeysForMusicFile(musicFile) {
+    const candidates = [
+        musicFile?.url,
+        musicFile?.path,
+        musicFile?.filePath,
+        musicFile?.filename,
+        musicFile?.title,
+        musicFile?.name,
+    ]
+        .filter(Boolean)
+        .map((value) => filenameKey(value));
+
+    if (musicFile?.title && musicFile?.artist) {
+        candidates.push(filenameKey(`${musicFile.artist}-${musicFile.title}`));
+    }
+
+    return [...new Set(candidates.filter(Boolean))];
+}
+
+async function loadDeviceArtwork() {
+    const artworkByFilename = new Map();
+    if (!MusicFiles?.getAll) return artworkByFilename;
+
+    try {
+        const musicFiles = await MusicFiles.getAll({ limit: 2000, offset: 0, coverQuality: 30, minSongDuration: 0 });
+        if (!Array.isArray(musicFiles)) return artworkByFilename;
+
+        musicFiles.forEach((musicFile) => {
+            const artworkUri = normalizeArtworkUri(musicFile?.cover || musicFile?.thumbnail || musicFile?.artwork);
+            if (!artworkUri) return;
+            artworkKeysForMusicFile(musicFile).forEach((key) => {
+                artworkByFilename.set(key, artworkUri);
+            });
+        });
+    } catch {
+        return artworkByFilename;
+    }
+
+    return artworkByFilename;
 }
 
 export async function scanDeviceMusic() {
@@ -68,9 +136,23 @@ export async function scanDeviceMusic() {
         tracks.push(...batch.filter(Boolean));
     }
 
+    const artworkByFilename = await loadDeviceArtwork();
+    const tracksWithArtwork = tracks.map((track) => {
+        const directKey = filenameKey(track.filename);
+        const fallbackKey = filenameKey(track.title);
+        const artworkUri = artworkByFilename.get(directKey)
+            || artworkByFilename.get(fallbackKey)
+            || null;
+
+        return {
+            ...track,
+            artworkUri,
+        };
+    });
+
     return {
         permissionGranted: true,
-        tracks: [...tracks, ...importedTracks].sort((a, b) => a.title.localeCompare(b.title)),
+        tracks: [...tracksWithArtwork, ...importedTracks].sort((a, b) => a.title.localeCompare(b.title)),
     };
 }
 
