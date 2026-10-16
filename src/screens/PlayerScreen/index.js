@@ -20,6 +20,7 @@ import {
     formatDuration,
     importAudioFiles,
     loadFavorites,
+    loadImportedTracks,
     loadPlaylists,
     removeImportedTrack,
     saveFavorites,
@@ -207,10 +208,13 @@ export default function PlayerScreen() {
             interruptionMode: 'doNotMix',
         }).catch(() => { });
 
-        Promise.all([loadPlaylists(), loadFavorites()]).then(([storedPlaylists, storedFavorites]) => {
+        Promise.all([loadPlaylists(), loadFavorites(), loadImportedTracks()]).then(([storedPlaylists, storedFavorites, importedTracks]) => {
             setPlaylists(storedPlaylists);
             setFavorites(storedFavorites);
-        }).catch(() => { });
+            setTracks(Array.isArray(importedTracks) ? importedTracks : []);
+        }).catch(() => {
+            setTracks([]);
+        });
 
         setLoading(false);
         setError('');
@@ -302,6 +306,13 @@ export default function PlayerScreen() {
     useEffect(() => {
         if (appearanceSettingsReady) saveAppearanceSettings({ accent, themeMode });
     }, [accent, appearanceSettingsReady, themeMode]);
+
+    useEffect(() => {
+        if (!advancedSettingsReady) return;
+        if (libraryAutoScan && !tracks.length) {
+            setTracks((current) => current.length ? current : []);
+        }
+    }, [advancedSettingsReady, libraryAutoScan, tracks.length]);
 
     useEffect(() => {
         const supportsVolumeManager = !!VolumeManager

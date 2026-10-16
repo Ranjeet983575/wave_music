@@ -24,12 +24,24 @@ function titleFromFilename(filename) {
         .trim() || 'Untitled track';
 }
 
+function toComparableFilename(value) {
+    return String(value || '')
+        .split(/[\\/]/)
+        .pop()
+        .trim()
+        .toLocaleLowerCase();
+}
+
 function isSameImportedFile(first, second) {
-    const firstName = (first.filename || '').trim().toLocaleLowerCase();
-    const secondName = (second.filename || '').trim().toLocaleLowerCase();
-    if (!firstName || firstName !== secondName) return false;
-    // Older saved imports have no size metadata, so treat a matching name as a duplicate.
-    return !first.size || !second.size || first.size === second.size;
+    const firstName = toComparableFilename(first?.filename || first?.title || '');
+    const secondName = toComparableFilename(second?.filename || second?.title || '');
+    if (!firstName || !secondName || firstName !== secondName) return false;
+
+    const firstSize = Number.isFinite(first?.size) ? Number(first.size) : null;
+    const secondSize = Number.isFinite(second?.size) ? Number(second.size) : null;
+    if (firstSize !== null && secondSize !== null && firstSize > 0 && secondSize > 0) return firstSize === secondSize;
+    if (first?.uri && second?.uri) return first.uri === second.uri;
+    return false;
 }
 
 async function albumNameForAsset(asset) {
@@ -103,16 +115,34 @@ async function loadDeviceArtwork() {
 
 export async function scanDeviceMusic() {
     const importedTracks = await loadImportedTracks();
-    const permission = await MediaLibrary.requestPermissionsAsync(false, ['audio']);
-    if (!permission.granted) {
+
+    if (!MediaLibrary || typeof MediaLibrary.requestPermissionsAsync !== 'function') {
         return { permissionGranted: false, tracks: importedTracks };
     }
 
-    const assets = await new MediaLibrary.Query()
-        .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.AUDIO)
-        .orderBy(MediaLibrary.AssetField.CREATION_TIME)
-        .limit(2000)
-        .exe();
+    const permission = await MediaLibrary.requestPermissionsAsync().catch(() => ({ granted: false }));
+    if (!permission?.granted) {
+        return { permissionGranted: false, tracks: importedTracks };
+    }
+
+    let assets = [];
+    try {
+        if (typeof MediaLibrary.getAssetsAsync === 'function') {
+            const result = await MediaLibrary.getAssetsAsync({
+                first: 2000,
+                mediaType: 'audio',
+            });
+            assets = Array.isArray(result?.assets) ? result.assets : [];
+        } else if (MediaLibrary.Query && typeof MediaLibrary.Query === 'function') {
+            assets = await new MediaLibrary.Query()
+                .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.AUDIO)
+                .orderBy(MediaLibrary.AssetField.CREATION_TIME)
+                .limit(2000)
+                .exe();
+        }
+    } catch {
+        return { permissionGranted: true, tracks: importedTracks };
+    }
 
     const tracks = [];
     for (let offset = 0; offset < assets.length; offset += 40) {
@@ -163,7 +193,29 @@ export async function scanDeviceMusic() {
 
 export async function loadImportedTracks() {
     try {
-        return JSON.parse((await AsyncStorage.getItem(IMPORTED_TRACKS_KEY)) || '[]');
+        const saved = JSON.parse((await AsyncStorage.getItem(IMPORTED_TRACKS_KEY)) || '[]');
+        if (!Array.isArray(saved)) return [];
+
+        const normalized = [];
+        for (const track of saved) {
+            if (!track || !(track.uri || track.filename || track.title)) continue;
+
+            const prepared = {
+                ...track,
+                filename: typeof track.filename === 'string' ? track.filename : (track.title || 'audio-file'),
+                size: Number.isFinite(track.size) ? Number(track.size) : 0,
+            };
+
+            if (prepared.uri) {
+                const file = new File(prepared.uri);
+                if (!file.exists) continue;
+            }
+
+            normalized.push(prepared);
+        }
+
+        await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(normalized));
+        return normalized;
     } catch {
         return [];
     }
@@ -175,49 +227,70 @@ export async function importAudioFiles() {
         multiple: true,
         copyToCacheDirectory: true,
     });
-    if (selection.canceled) return { additions: [], skipped: 0, canceled: true };
+    if (selection.canceled || !selection.assets?.length) return { additions: [], skipped: 0, canceled: true };
 
-    const directory = new Directory(Paths.document, 'WaveMusicImports');
-    if (!directory.exists) directory.create({ intermediates: true, idempotent: true });
+    const importDirectory = new Directory(Paths.document, 'WaveMusicImports');
+    if (!importDirectory.exists) {
+        importDirectory.create({ intermediates: true, idempotent: true });
+    }
 
     const importedTracks = await loadImportedTracks();
     const additions = [];
     let skipped = 0;
     const seen = [...importedTracks];
     for (const [index, asset] of selection.assets.entries()) {
-        const candidate = { filename: asset.name, size: asset.size || 0 };
+        const sourceUri = asset?.uri || '';
+        if (!sourceUri) {
+            skipped += 1;
+            continue;
+        }
+
+        const candidate = { filename: asset.name, size: Number.isFinite(asset.size) ? asset.size : 0, uri: sourceUri };
         if (seen.some((track) => isSameImportedFile(track, candidate))) {
             skipped += 1;
             continue;
         }
+
         const filename = asset.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
-        const destination = new File(directory, `${Date.now()}-${index}-${filename}`);
-        await new File(asset.uri).copy(destination);
-        const track = {
-            id: `import:${destination.uri}`,
-            uri: destination.uri,
-            filename: asset.name,
-            size: asset.size || 0,
-            title: titleFromFilename(asset.name),
-            artist: 'Unknown artist',
-            album: 'Imported audio',
-            duration: 0,
-            creationTime: asset.lastModified || Date.now(),
-            source: 'files',
-        };
-        additions.push(track);
-        seen.push(track);
+        const destinationFile = new File(importDirectory, `${Date.now()}-${index}-${filename}`);
+
+        try {
+            const sourceFile = new File(sourceUri);
+            await sourceFile.copy(destinationFile, { overwrite: true });
+            if (!destinationFile.exists) throw new Error('Copied file was not created.');
+
+            const track = {
+                id: `import:${destinationFile.uri}`,
+                uri: destinationFile.uri,
+                filename: asset.name,
+                size: asset.size || 0,
+                title: titleFromFilename(asset.name),
+                artist: 'Unknown artist',
+                album: 'Imported audio',
+                duration: 0,
+                creationTime: asset.lastModified || Date.now(),
+                source: 'files',
+            };
+            additions.push(track);
+            seen.push(track);
+        } catch {
+            skipped += 1;
+        }
     }
 
     const merged = [...importedTracks, ...additions];
-    await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(merged));
+    await saveImportedTracks(merged);
     return { additions, skipped, canceled: false };
+}
+
+export async function saveImportedTracks(tracks) {
+    await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(Array.isArray(tracks) ? tracks : []));
 }
 
 export async function removeImportedTrack(trackId) {
     const importedTracks = await loadImportedTracks();
     const nextTracks = importedTracks.filter((track) => track.id !== trackId);
-    await AsyncStorage.setItem(IMPORTED_TRACKS_KEY, JSON.stringify(nextTracks));
+    await saveImportedTracks(nextTracks);
     return nextTracks;
 }
 

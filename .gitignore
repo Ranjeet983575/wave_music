@@ -38,3 +38,5 @@ logs/
 *.swp
 coverage/
 *.tmp
+.expo-export/
+.expo-export/**
