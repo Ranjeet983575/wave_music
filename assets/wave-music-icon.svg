@@ -1,0 +1,42 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="140" y1="120" x2="900" y2="940" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0F1916"/>
+      <stop offset="0.5" stop-color="#0A120F"/>
+      <stop offset="1" stop-color="#050807"/>
+    </linearGradient>
+    <linearGradient id="glow" x1="230" y1="240" x2="760" y2="770" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#85F7B8"/>
+      <stop offset="0.5" stop-color="#5BDF94"/>
+      <stop offset="1" stop-color="#2FBF78"/>
+    </linearGradient>
+    <radialGradient id="orbs" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(330 280) rotate(44.3) scale(590 520)">
+      <stop stop-color="#7EF0BE" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#7EF0BE" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect x="64" y="64" width="896" height="896" rx="220" fill="url(#bg)"/>
+  <rect x="64" y="64" width="896" height="896" rx="220" stroke="#24352E" stroke-width="12"/>
+  <ellipse cx="520" cy="500" rx="365" ry="330" fill="url(#orbs)"/>
+
+  <g filter="url(#shadow)">
+    <path d="M210 510C248 447 290 414 334 414C381 414 414 458 442 501C470 545 488 603 531 603C565 603 598 565 624 521C653 473 678 430 710 430C744 430 776 466 804 510" stroke="url(#glow)" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M285 670C330 625 370 593 399 593C433 593 461 622 492 662C521 701 554 733 595 733C650 733 696 682 736 624" stroke="#C9F7D9" stroke-opacity="0.8" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <g filter="url(#shadow2)">
+    <circle cx="395" cy="328" r="95" fill="#111B17" stroke="#76F0AD" stroke-width="18"/>
+    <path d="M381 274V442C381 454.1 390.9 464 403 464H425.5C437.6 464 447.5 454.1 447.5 442V305.9L468.8 314.1C479.7 318.3 491.8 312.4 496 301.5C500.1 290.7 494.2 278.5 483.3 274.3L431.5 250.5C425.6 247.9 419 247.5 413.2 249.3C403.2 252.7 395.7 261.9 395.1 272.1L395 274Z" fill="url(#glow)"/>
+    <path d="M381 274V442C381 454.1 390.9 464 403 464H425.5C437.6 464 447.5 454.1 447.5 442V305.9L468.8 314.1C479.7 318.3 491.8 312.4 496 301.5C500.1 290.7 494.2 278.5 483.3 274.3L431.5 250.5C425.6 247.9 419 247.5 413.2 249.3C403.2 252.7 395.7 261.9 395.1 272.1L381 274Z" fill="url(#glow)" fill-opacity="0.22"/>
+  </g>
+
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#67E59B" flood-opacity="0.25"/>
+    </filter>
+    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#67E59B" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+</svg>
