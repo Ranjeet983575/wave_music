@@ -16,11 +16,12 @@ const FAVORITES_KEY = '@wave-music/favorites-v1';
 const IMPORTED_TRACKS_KEY = '@wave-music/imported-tracks-v1';
 
 function titleFromFilename(filename) {
-    return filename
+    const safeName = typeof filename === 'string' ? filename : '';
+    return safeName
         .replace(/\.[^/.]+$/, '')
         .replace(/[_-]+/g, ' ')
         .replace(/\s+/g, ' ')
-        .trim();
+        .trim() || 'Untitled track';
 }
 
 function isSameImportedFile(first, second) {
@@ -118,15 +119,19 @@ export async function scanDeviceMusic() {
         const batch = await Promise.all(assets.slice(offset, offset + 40).map(async (asset) => {
             try {
                 const [info, album] = await Promise.all([asset.getInfo(), albumNameForAsset(asset)]);
+                const filename = typeof info?.filename === 'string' && info.filename.trim() ? info.filename : 'audio-file';
+                const safeAlbum = typeof album === 'string' && album.trim() ? album : 'Singles';
+                const safeUri = typeof info?.uri === 'string' ? info.uri : '';
+                const safeDuration = Number.isFinite(info?.duration) ? info.duration : 0;
                 return {
-                    id: info.id,
-                    uri: info.uri,
-                    filename: info.filename,
-                    title: titleFromFilename(info.filename),
+                    id: info?.id || `${safeUri || filename}-${offset}-${Date.now()}`,
+                    uri: safeUri,
+                    filename,
+                    title: titleFromFilename(filename),
                     artist: 'Unknown artist',
-                    album,
-                    duration: Math.max(0, Math.round((info.duration || 0) / 1000)),
-                    creationTime: info.creationTime || 0,
+                    album: safeAlbum,
+                    duration: Math.max(0, Math.round(safeDuration / 1000)),
+                    creationTime: Number.isFinite(info?.creationTime) ? info.creationTime : Date.now(),
                     source: 'device',
                 };
             } catch {

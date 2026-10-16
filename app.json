@@ -14,7 +14,7 @@
       }
     },
     "ios": {
-      "bundleIdentifier": "com.ranjeet983575.wave_music",
+      "bundleIdentifier": "com.ranjeet983575.wave-music",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }

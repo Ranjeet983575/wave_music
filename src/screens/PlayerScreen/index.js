@@ -206,15 +206,19 @@ export default function PlayerScreen() {
             shouldPlayInBackground: true,
             interruptionMode: 'doNotMix',
         }).catch(() => { });
+
         Promise.all([loadPlaylists(), loadFavorites()]).then(([storedPlaylists, storedFavorites]) => {
             setPlaylists(storedPlaylists);
             setFavorites(storedFavorites);
-        });
-        scanLibrary();
+        }).catch(() => { });
+
+        setLoading(false);
+        setError('');
+        setPermissionGranted(null);
     }, []);
 
     useEffect(() => {
-        if (!player) return;
+        if (!player || typeof player.setActiveForLockScreen !== 'function') return;
         if (!activeTrack) {
             player.setActiveForLockScreen(false);
             return;
@@ -300,10 +304,16 @@ export default function PlayerScreen() {
     }, [accent, appearanceSettingsReady, themeMode]);
 
     useEffect(() => {
-        if (!VolumeManager) return undefined;
+        const supportsVolumeManager = !!VolumeManager
+            && typeof VolumeManager.getVolume === 'function'
+            && typeof VolumeManager.addVolumeListener === 'function'
+            && typeof VolumeManager.setVolume === 'function';
+
+        if (!supportsVolumeManager) return undefined;
+
         let isMounted = true;
         const syncDeviceVolume = (result) => {
-            if (!isMounted || !Number.isFinite(result?.volume)) return;
+            if (!isMounted || !result || !Number.isFinite(result.volume)) return;
             if (Platform.OS === 'android' && result.type && result.type !== 'music') return;
             setVolume(Math.max(0, Math.min(1, result.volume)));
         };
@@ -312,17 +322,20 @@ export default function PlayerScreen() {
         const subscription = VolumeManager.addVolumeListener(syncDeviceVolume);
         return () => {
             isMounted = false;
-            subscription.remove();
+            if (subscription && typeof subscription.remove === 'function') {
+                subscription.remove();
+            }
         };
     }, []);
 
     useEffect(() => {
-        if (!status.isLoaded) return;
+        if (!player || !status.isLoaded) return;
         player.shouldCorrectPitch = advancedSettings.pitchCorrection;
         player.setPlaybackRate(advancedSettings.playbackRate);
     }, [advancedSettings.pitchCorrection, advancedSettings.playbackRate, player, status.isLoaded]);
 
     useEffect(() => {
+        if (!player) return;
         player.volume = Math.min(volume, advancedSettings.volumeLimit);
     }, [advancedSettings.volumeLimit, player, volume]);
 
@@ -532,10 +545,17 @@ export default function PlayerScreen() {
         const next = Math.max(0, Math.min(1, nextVolume));
         setVolume(next);
         setVolumePreview(null);
-        if (!VolumeManager) {
-            player.volume = Math.min(next, advancedSettings.volumeLimit);
+
+        const supportsVolumeManager = !!VolumeManager
+            && typeof VolumeManager.setVolume === 'function';
+
+        if (!supportsVolumeManager) {
+            if (player && typeof player.volume !== 'undefined') {
+                player.volume = Math.min(next, advancedSettings.volumeLimit);
+            }
             return;
         }
+
         try {
             await VolumeManager.setVolume(next, { showUI: false, playSound: false, type: 'music' });
         } catch {
