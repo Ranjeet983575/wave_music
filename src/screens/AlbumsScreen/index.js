@@ -5,7 +5,7 @@ import { Artwork, EmptyState } from '../../components/common';
 
 const C = APP_THEME;
 
-export default function AlbumsScreen({ albums, loading, onScanLibrary, onSelectAlbum }) {
+export default function AlbumsScreen({ albums, loading, onImportMusicFiles, onSelectAlbum }) {
   return (
     <ScrollView contentContainerStyle={styles.pageContent}>
       <View style={styles.libraryHero}>
@@ -23,7 +23,7 @@ export default function AlbumsScreen({ albums, loading, onScanLibrary, onSelectA
           ))}
         </View>
       ) : (
-        <EmptyState icon="albums-outline" title="No albums yet" detail="Scan your device music library to find albums." action="Scan device" onAction={onScanLibrary} busy={loading} stylesOverride={styles} />
+        <EmptyState icon="albums-outline" title="No albums yet" detail="Import music from Files to start organizing albums." secondaryAction="Import from Files" onSecondaryAction={onImportMusicFiles} busy={loading} stylesOverride={styles} />
       )}
     </ScrollView>
   );

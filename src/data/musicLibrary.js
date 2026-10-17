@@ -1,15 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
-import * as MediaLibrary from 'expo-media-library';
-
-const MusicFiles = (() => {
-    try {
-        return require('react-native-get-music-files');
-    } catch {
-        return null;
-    }
-})();
 
 const PLAYLISTS_KEY = '@wave-music/playlists-v1';
 const FAVORITES_KEY = '@wave-music/favorites-v1';
@@ -89,106 +80,6 @@ function artworkKeysForMusicFile(musicFile) {
     }
 
     return [...new Set(candidates.filter(Boolean))];
-}
-
-async function loadDeviceArtwork() {
-    const artworkByFilename = new Map();
-    if (!MusicFiles?.getAll) return artworkByFilename;
-
-    try {
-        const musicFiles = await MusicFiles.getAll({ limit: 2000, offset: 0, coverQuality: 30, minSongDuration: 0 });
-        if (!Array.isArray(musicFiles)) return artworkByFilename;
-
-        musicFiles.forEach((musicFile) => {
-            const artworkUri = normalizeArtworkUri(musicFile?.cover || musicFile?.thumbnail || musicFile?.artwork);
-            if (!artworkUri) return;
-            artworkKeysForMusicFile(musicFile).forEach((key) => {
-                artworkByFilename.set(key, artworkUri);
-            });
-        });
-    } catch {
-        return artworkByFilename;
-    }
-
-    return artworkByFilename;
-}
-
-export async function scanDeviceMusic() {
-    const importedTracks = await loadImportedTracks();
-
-    if (!MediaLibrary || typeof MediaLibrary.requestPermissionsAsync !== 'function') {
-        return { permissionGranted: false, tracks: importedTracks };
-    }
-
-    const permission = await MediaLibrary.requestPermissionsAsync().catch(() => ({ granted: false }));
-    if (!permission?.granted) {
-        return { permissionGranted: false, tracks: importedTracks };
-    }
-
-    let assets = [];
-    try {
-        if (typeof MediaLibrary.getAssetsAsync === 'function') {
-            const result = await MediaLibrary.getAssetsAsync({
-                first: 2000,
-                mediaType: 'audio',
-            });
-            assets = Array.isArray(result?.assets) ? result.assets : [];
-        } else if (MediaLibrary.Query && typeof MediaLibrary.Query === 'function') {
-            assets = await new MediaLibrary.Query()
-                .eq(MediaLibrary.AssetField.MEDIA_TYPE, MediaLibrary.MediaType.AUDIO)
-                .orderBy(MediaLibrary.AssetField.CREATION_TIME)
-                .limit(2000)
-                .exe();
-        }
-    } catch {
-        return { permissionGranted: true, tracks: importedTracks };
-    }
-
-    const tracks = [];
-    for (let offset = 0; offset < assets.length; offset += 40) {
-        const batch = await Promise.all(assets.slice(offset, offset + 40).map(async (asset) => {
-            try {
-                const [info, album] = await Promise.all([asset.getInfo(), albumNameForAsset(asset)]);
-                const filename = typeof info?.filename === 'string' && info.filename.trim() ? info.filename : 'audio-file';
-                const safeAlbum = typeof album === 'string' && album.trim() ? album : 'Singles';
-                const safeUri = typeof info?.uri === 'string' ? info.uri : '';
-                const safeDuration = Number.isFinite(info?.duration) ? info.duration : 0;
-                return {
-                    id: info?.id || `${safeUri || filename}-${offset}-${Date.now()}`,
-                    uri: safeUri,
-                    filename,
-                    title: titleFromFilename(filename),
-                    artist: 'Unknown artist',
-                    album: safeAlbum,
-                    duration: Math.max(0, Math.round(safeDuration / 1000)),
-                    creationTime: Number.isFinite(info?.creationTime) ? info.creationTime : Date.now(),
-                    source: 'device',
-                };
-            } catch {
-                return null;
-            }
-        }));
-        tracks.push(...batch.filter(Boolean));
-    }
-
-    const artworkByFilename = await loadDeviceArtwork();
-    const tracksWithArtwork = tracks.map((track) => {
-        const directKey = filenameKey(track.filename);
-        const fallbackKey = filenameKey(track.title);
-        const artworkUri = artworkByFilename.get(directKey)
-            || artworkByFilename.get(fallbackKey)
-            || null;
-
-        return {
-            ...track,
-            artworkUri,
-        };
-    });
-
-    return {
-        permissionGranted: true,
-        tracks: [...tracksWithArtwork, ...importedTracks].sort((a, b) => a.title.localeCompare(b.title)),
-    };
 }
 
 export async function loadImportedTracks() {

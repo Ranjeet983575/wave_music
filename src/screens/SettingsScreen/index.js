@@ -15,16 +15,12 @@ export default function SettingsScreen({
   setLibraryAutoScan,
   smartImportEnabled,
   setSmartImportEnabled,
-  permissionGranted,
-  tracks,
-  loading,
   accent,
   themeMode,
   setThemeMode,
   setAccent,
   onOpenEqualizer,
   onOpenAdvancedSettings,
-  onScanLibrary,
   onImportMusicFiles,
 }) {
   const themeOptions = ['Light', 'Dark'];
@@ -100,25 +96,6 @@ export default function SettingsScreen({
 
       <View style={styles.settingsSection}>
         <Text style={styles.sectionCaption}>Library</Text>
-        <View style={styles.settingCard}>
-          <View style={styles.settingIcon}><Ionicons name="musical-notes-outline" size={18} color={accent} /></View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardTitle}>Device library</Text>
-            <Text style={styles.cardSub}>{permissionGranted ? `${tracks.length} tracks available` : 'Access media files on this device'}</Text>
-          </View>
-          <Pressable onPress={onScanLibrary} style={styles.smallAction}>
-            <Text style={styles.smallActionText}>{loading ? 'Scanning' : 'Rescan'}</Text>
-          </Pressable>
-        </View>
-
-        <Pressable style={styles.settingRow} onPress={() => setLibraryAutoScan((value) => !value)}>
-          <View style={styles.settingRowIcon}><Ionicons name="scan-outline" size={20} color={C.green} /></View>
-          <View style={styles.settingRowText}>
-            <Text style={styles.settingRowTitle}>Auto scan</Text>
-            <Text style={styles.settingRowDescription}>{libraryAutoScan ? 'On' : 'Off'}</Text>
-          </View>
-          <ToggleSwitch enabled={libraryAutoScan} onToggle={() => setLibraryAutoScan((value) => !value)} />
-        </Pressable>
 
         <Pressable style={styles.settingRow} onPress={() => setSmartImportEnabled((value) => !value)}>
           <View style={styles.settingRowIcon}><Ionicons name="folder-open-outline" size={20} color={C.green} /></View>
@@ -139,9 +116,6 @@ export default function SettingsScreen({
         </Pressable>
       </View>
 
-      {permissionGranted === false ? (
-        <Text style={styles.helperText}>Audio access was declined. Enable media access in iPhone Settings to scan your library.</Text>
-      ) : null}
     </ScrollView>
   );
 }

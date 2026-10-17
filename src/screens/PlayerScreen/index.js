@@ -5,9 +5,10 @@ import {
     FlatList,
     Image,
     Modal,
-    Pressable,
     Platform,
+    Pressable,
     ScrollView,
+    Share,
     StyleSheet,
     Text,
     TextInput,
@@ -25,12 +26,12 @@ import {
     removeImportedTrack,
     saveFavorites,
     savePlaylists,
-    scanDeviceMusic,
 } from '../../data/musicLibrary';
 import { DEFAULT_EQ_LEVELS, DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
 import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceSettings, saveAppearanceSettings } from '../../data/appearanceSettings';
 import { ACCENT_COLORS, APP_THEME, LIGHT_THEME } from '../../constants/theme';
 import WaveformVisualizer from '../../components/WaveformVisualizer';
+import { Artwork, EmptyState, IconButton, ToggleSwitch, TrackRow } from '../../components/Player/PlayerControls';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
 const C = APP_THEME;
@@ -50,105 +51,11 @@ const TABS = [
     { key: 'Settings', icon: 'settings-outline' },
 ];
 
-function IconButton({ name, onPress, size = 22, color = C.text, style, accessibilityLabel }) {
-    return (
-        <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={accessibilityLabel || name}
-            onPress={onPress}
-            style={({ pressed }) => [styles.iconButton, style, pressed && styles.pressed]}
-        >
-            <Ionicons name={name} size={size} color={color} />
-        </Pressable>
-    );
-}
 
-function ToggleSwitch({ enabled, onToggle, activeColor = C.green }) {
-    return (
-        <Pressable
-            accessibilityRole="switch"
-            accessibilityState={{ checked: enabled }}
-            onPress={onToggle}
-            style={({ pressed }) => [
-                styles.togglePill,
-                enabled && { backgroundColor: activeColor },
-                pressed && styles.pressed,
-            ]}
-        >
-            <View style={[styles.toggleKnob, enabled && styles.toggleKnobActive]} />
-        </Pressable>
-    );
-}
 
-function Artwork({ size = 58, iconSize, tint = C.green, rounded = 15, uri }) {
-    return (
-        <View style={[styles.artwork, { width: size, height: size, borderRadius: rounded }]}>
-            {uri ? (
-                <Image source={{ uri }} style={styles.artworkImage} resizeMode="cover" />
-            ) : (
-                <>
-                    <View style={styles.artworkGlow} />
-                    <Ionicons name="musical-notes" size={iconSize || size * 0.46} color={tint} />
-                </>
-            )}
-        </View>
-    );
-}
 
-function TrackRow({ track, index, onPress, onMore, favorite, onFavorite, stylesOverride, accentColor = C.green, secondaryColor = C.secondary }) {
-    const rowStyles = stylesOverride || styles;
-    return (
-        <View style={rowStyles.trackRow}>
-            <Pressable onPress={onPress} style={rowStyles.trackMain} accessibilityRole="button" accessibilityLabel={`Play ${track.title}`}>
-                <Artwork size={56} tint={accentColor} uri={track.artworkUri} />
-                <View style={rowStyles.trackText}>
-                    <Text numberOfLines={1} style={rowStyles.trackTitle}>{track.title}</Text>
-                    <Text numberOfLines={1} style={rowStyles.trackSubtitle}>{track.artist}  ·  {track.album}</Text>
-                </View>
-            </Pressable>
-            <View style={rowStyles.trackMeta}>
-                <Text style={rowStyles.trackDuration}>{track.duration ? formatDuration(track.duration) : '--:--'}</Text>
-                {favorite ? <IconButton
-                    name="heart"
-                    color={accentColor}
-                    size={20}
-                    onPress={onFavorite}
-                    accessibilityLabel="Remove from favorites"
-                /> : null}
-                <IconButton
-                    name="ellipsis-horizontal"
-                    color={secondaryColor}
-                    size={20}
-                    onPress={onMore}
-                    accessibilityLabel="Track options"
-                />
-            </View>
-        </View>
-    );
-}
 
-function EmptyState({ icon, title, detail, action, onAction, busy, busyText = 'Scanning library', secondaryAction, onSecondaryAction, stylesOverride, accentColor = C.green }) {
-    const emptyStyles = stylesOverride || styles;
-    return (
-        <View style={emptyStyles.emptyState}>
-            <View style={emptyStyles.emptyIcon}><Ionicons name={icon} size={34} color={accentColor} /></View>
-            <Text style={emptyStyles.emptyTitle}>{title}</Text>
-            <Text style={emptyStyles.emptyDetail}>{detail}</Text>
-            {action ? (
-                <Pressable onPress={onAction} style={emptyStyles.primaryButton}>
-                    {busy ? <ActivityIndicator color={C.background} /> : <Ionicons name="scan-outline" size={18} color={C.background} />}
-                    <Text style={emptyStyles.primaryButtonText}>{busy ? busyText : action}</Text>
-                </Pressable>
-            ) : null}
-            {secondaryAction ? (
-                <Pressable onPress={onSecondaryAction} style={emptyStyles.secondaryButton}>
-                    <Ionicons name="folder-open-outline" size={17} color={accentColor} />
-                    <Text style={emptyStyles.secondaryButtonText}>{secondaryAction}</Text>
-                </Pressable>
-            ) : null}
-        </View>
-    );
-}
+
 
 export default function PlayerScreen() {
     const [tracks, setTracks] = useState([]);
@@ -169,7 +76,6 @@ export default function PlayerScreen() {
     const [selectedPlaylist, setSelectedPlaylist] = useState(null);
     const [showPlaylistCreator, setShowPlaylistCreator] = useState(false);
     const [playlistName, setPlaylistName] = useState('');
-    const [permissionGranted, setPermissionGranted] = useState(null);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState(false);
     const [error, setError] = useState('');
@@ -218,7 +124,6 @@ export default function PlayerScreen() {
 
         setLoading(false);
         setError('');
-        setPermissionGranted(null);
     }, []);
 
     useEffect(() => {
@@ -366,20 +271,6 @@ export default function PlayerScreen() {
         completedTrackRef.current = nextTrack?.id || activeTrack.id;
     }, [activeTrack, advancedSettings.autoPlayNext, advancedSettings.repeatAllEnabled, advancedSettings.shuffleEnabled, queue, status.didJustFinish, tracks]);
 
-    async function scanLibrary() {
-        setLoading(true);
-        setError('');
-        try {
-            const result = await scanDeviceMusic();
-            setPermissionGranted(result.permissionGranted);
-            setTracks(result.tracks);
-        } catch (scanError) {
-            setError(scanError?.message || 'Music library could not be opened.');
-        } finally {
-            setLoading(false);
-        }
-    }
-
     async function importMusicFiles() {
         setImporting(true);
         setError('');
@@ -401,6 +292,83 @@ export default function PlayerScreen() {
         } finally {
             setImporting(false);
         }
+    }
+
+    async function shareTrack(track) {
+        if (!track?.uri) {
+            Alert.alert('Share unavailable', 'This track has no file URL available to share.');
+            return;
+        }
+
+        try {
+            await Share.share({
+                title: track.title || 'Wave Music track',
+                message: `Sharing ${track.title || 'audio file'} from Wave Music`,
+                url: track.uri,
+            });
+        } catch (error) {
+            Alert.alert('Transfer failed', error?.message || 'Unable to share this file.');
+        }
+    }
+
+    function handleTransferChoice() {
+        const trackOptions = tracks.length ? tracks : [];
+
+        Alert.alert(
+            'Transfer audio',
+            'Choose how you want to move music.',
+            [
+                { text: 'Receive', onPress: importMusicFiles },
+                {
+                    text: 'Send', onPress: () => {
+                        if (!trackOptions.length) {
+                            Alert.alert('No music to send', 'Import a track first, then choose Send.');
+                            return;
+                        }
+
+                        const items = trackOptions.map((track) => ({
+                            text: track.title || 'Track',
+                            onPress: () => shareTrack(track),
+                        }));
+                        Alert.alert('Select a track to send', '', [
+                            ...items,
+                            { text: 'Cancel', style: 'cancel' },
+                        ]);
+                    }
+                },
+                { text: 'Cancel', style: 'cancel' },
+            ],
+        );
+    }
+
+    function handleAppleDeviceTransferChoice() {
+        const trackOptions = tracks.length ? tracks : [];
+
+        Alert.alert(
+            'Apple device transfer',
+            'Choose whether to receive files from another iPhone, iPad, or iPod, or send music to one.',
+            [
+                { text: 'Receive from another Apple device', onPress: importMusicFiles },
+                {
+                    text: 'Send to another Apple device', onPress: () => {
+                        if (!trackOptions.length) {
+                            Alert.alert('No music to send', 'Import a track first, then choose Send to another Apple device.');
+                            return;
+                        }
+
+                        const items = trackOptions.map((track) => ({
+                            text: track.title || 'Track',
+                            onPress: () => shareTrack(track),
+                        }));
+                        Alert.alert('Select a track to send', '', [
+                            ...items,
+                            { text: 'Cancel', style: 'cancel' },
+                        ]);
+                    }
+                },
+                { text: 'Cancel', style: 'cancel' },
+            ],
+        );
     }
 
     const filteredTracks = useMemo(() => {
@@ -606,18 +574,17 @@ export default function PlayerScreen() {
                         stylesOverride={styles}
                         accentColor={C.green}
                         secondaryColor={C.secondary}
+                        formatDuration={formatDuration}
+                        styles={styles}
                     />
                 )}
                 contentContainerStyle={styles.trackListContent}
                 ListEmptyComponent={(
                     <EmptyState
                         icon={activeTab === 'Playlists' ? 'list-outline' : 'musical-notes-outline'}
-                        title={loading ? 'Finding your music' : error ? 'Library unavailable' : 'No tracks here yet'}
-                        detail={loading ? 'Scanning audio stored on this device.' : error || 'Allow audio access or add songs to your device library.'}
-                        action={!loading && !error ? 'Scan device again' : undefined}
-                        busy={loading}
-                        onAction={scanLibrary}
-                        secondaryAction={!loading && !error ? 'Import from Files' : undefined}
+                        title="No tracks here yet"
+                        detail="Import music from Files to start listening."
+                        secondaryAction="Import from Files"
                         onSecondaryAction={importMusicFiles}
                         stylesOverride={styles}
                         accentColor={C.green}
@@ -629,10 +596,7 @@ export default function PlayerScreen() {
 
     function renderTracks() {
         if (loading && tracks.length === 0) {
-            return <EmptyState icon="radio-outline" title="Finding your music" detail="Scanning audio stored on this device." busy stylesOverride={styles} accentColor={C.green} />;
-        }
-        if (permissionGranted === false && tracks.length === 0) {
-            return <EmptyState icon="lock-closed-outline" title="Music access is off" detail="Allow audio access to scan the device library, or import individual songs from Files." action="Request access" onAction={scanLibrary} secondaryAction="Import from Files" onSecondaryAction={importMusicFiles} stylesOverride={styles} accentColor={C.green} />;
+            return <EmptyState icon="radio-outline" title="No music yet" detail="Import audio from Files to begin." busy={false} stylesOverride={styles} accentColor={C.green} secondaryAction="Import from Files" onSecondaryAction={importMusicFiles} />;
         }
         return (
             <>
@@ -650,7 +614,7 @@ export default function PlayerScreen() {
                             placeholderTextColor={C.dim}
                             style={styles.searchInput}
                         />
-                        <IconButton name="close" color={C.secondary} onPress={() => { setSearch(''); setSearchOpen(false); }} />
+                        <IconButton name="close" color={C.secondary} onPress={() => { setSearch(''); setSearchOpen(false); }} styles={styles} />
                     </View>
                 ) : null}
                 <View style={styles.actionRow}>
@@ -662,8 +626,7 @@ export default function PlayerScreen() {
                         <Ionicons name="shuffle" size={19} color={C.background} />
                         <Text style={styles.shuffleText}>Shuffle play</Text>
                     </Pressable>
-                    <IconButton name="search" size={19} color={C.secondary} onPress={() => setSearchOpen(true)} style={styles.searchToggle} accessibilityLabel="Search tracks" />
-                    <IconButton name="refresh" size={19} color={C.secondary} onPress={scanLibrary} style={styles.searchToggle} accessibilityLabel="Rescan device music" />
+                    <IconButton name="search" size={19} color={C.secondary} onPress={() => setSearchOpen(true)} style={styles.searchToggle} accessibilityLabel="Search tracks" styles={styles} />
                 </View>
                 {renderTrackList(filteredTracks)}
             </>
@@ -675,7 +638,7 @@ export default function PlayerScreen() {
             return (
                 <>
                     <View style={styles.detailHeader}>
-                        <IconButton name="arrow-back" color={C.text} onPress={() => setSelectedPlaylist(null)} accessibilityLabel="Back to playlists" />
+                        <IconButton name="arrow-back" color={C.text} onPress={() => setSelectedPlaylist(null)} accessibilityLabel="Back to playlists" styles={styles} />
                         <View style={{ flex: 1 }}>
                             <Text style={styles.eyebrow}>PLAYLIST</Text>
                             <Text style={styles.sectionTitle}>{selectedPlaylist.name}</Text>
@@ -690,7 +653,7 @@ export default function PlayerScreen() {
             <ScrollView contentContainerStyle={styles.pageContent}>
                 <View style={styles.libraryHero}>
                     <View><Text style={styles.eyebrow}>MADE FOR YOU</Text><Text style={styles.heroTitle}>Playlists</Text></View>
-                    <IconButton name="add" color={C.background} onPress={createPlaylist} style={styles.addButton} />
+                    <IconButton name="add" color={C.background} onPress={createPlaylist} style={styles.addButton} styles={styles} />
                 </View>
                 <Pressable style={styles.favoritePlaylist} onPress={() => setSelectedPlaylist({ id: 'favorites', name: 'Liked tracks', trackIds: favorites })}>
                     <View style={styles.favoriteArt}><Ionicons name="heart" size={25} color={C.background} /></View>
@@ -699,9 +662,9 @@ export default function PlayerScreen() {
                 </Pressable>
                 {playlists.map((playlist, index) => (
                     <Pressable key={playlist.id} style={styles.playlistRow} onPress={() => setSelectedPlaylist(playlist)}>
-                        <Artwork size={62} tint={index % 2 ? '#D2A7FF' : C.green} />
+                        <Artwork size={62} tint={index % 2 ? '#D2A7FF' : C.green} styles={styles} />
                         <View style={styles.flexOne}><Text style={styles.cardTitle}>{playlist.name}</Text><Text style={styles.cardSub}>{playlist.trackIds.length} songs</Text></View>
-                        <IconButton name="ellipsis-horizontal" color={C.secondary} onPress={() => Alert.alert(playlist.name, 'Remove this playlist?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { const next = playlists.filter((item) => item.id !== playlist.id); setPlaylists(next); await savePlaylists(next); } }])} />
+                        <IconButton name="ellipsis-horizontal" color={C.secondary} onPress={() => Alert.alert(playlist.name, 'Remove this playlist?', [{ text: 'Cancel', style: 'cancel' }, { text: 'Remove', style: 'destructive', onPress: async () => { const next = playlists.filter((item) => item.id !== playlist.id); setPlaylists(next); await savePlaylists(next); } }])} styles={styles} />
                     </Pressable>
                 ))}
                 {playlists.length === 0 ? <Text style={styles.helperText}>Make a playlist from any track’s options menu.</Text> : null}
@@ -723,14 +686,14 @@ export default function PlayerScreen() {
                                 setSelectedPlaylist({ id: `album-${album.name}`, name: album.name, trackIds: album.tracks.map((track) => track.id) });
                                 setActiveTab('Playlists');
                             }}>
-                                <Artwork size={156} iconSize={58} rounded={18} tint={index % 3 === 0 ? C.green : index % 3 === 1 ? '#D2A7FF' : '#83C9F4'} />
+                                <Artwork size={156} iconSize={58} rounded={18} tint={index % 3 === 0 ? C.green : index % 3 === 1 ? '#D2A7FF' : '#83C9F4'} styles={styles} />
                                 <Text numberOfLines={1} style={styles.albumTitle}>{album.name}</Text>
                                 <Text style={styles.cardSub}>{album.tracks.length} tracks</Text>
                             </Pressable>
                         ))}
                     </View>
                 ) : (
-                    <EmptyState icon="albums-outline" title="No albums yet" detail="Scan your device music library to find albums." action="Scan device" onAction={scanLibrary} busy={loading} stylesOverride={styles} accentColor={C.green} />
+                    <EmptyState icon="albums-outline" title="No albums yet" detail="Import music from Files to start organizing albums." secondaryAction="Import from Files" onSecondaryAction={importMusicFiles} stylesOverride={styles} accentColor={C.green} />
                 )}
             </ScrollView>
         );
@@ -738,11 +701,10 @@ export default function PlayerScreen() {
 
     function renderImports() {
         const importSources = [
+            { title: 'Share', subtitle: 'Send or receive tracks', icon: 'share-social-outline', color: '#55B9FF', onPress: handleTransferChoice },
             { title: 'Computer', subtitle: 'Using Wi-Fi', icon: 'desktop-outline', color: '#55B9FF', message: 'Computer transfer is not available yet.' },
-            { title: 'iPhone/iPad/iPod', subtitle: 'Transfer tracks', icon: 'phone-portrait-outline', color: '#E27777', message: 'Use Files to select audio stored on this device.' },
-            { title: 'Android', subtitle: 'Android iOS file share', icon: 'phone-portrait-outline', color: '#20C875', message: 'Use Files to select audio stored on this device.' },
+            { title: 'iPhone / iPad / iPod', subtitle: 'Transfer tracks', icon: 'phone-portrait-outline', color: '#E27777', onPress: handleAppleDeviceTransferChoice },
             { title: 'Files', subtitle: 'Import tracks from files', icon: 'folder', color: '#58AEFF', onPress: importMusicFiles },
-            { title: 'Apple Music', subtitle: 'Import tracks from apple music', icon: 'musical-note', color: '#E85A9B', message: 'Apple Music tracks cannot be imported directly. Choose audio files from Files.' },
         ];
         return (
             <ScrollView contentContainerStyle={styles.importPage}>
@@ -845,7 +807,7 @@ export default function PlayerScreen() {
                         </Pressable>
                         <Text style={styles.settingsHeaderTitle}>Equalizer</Text>
                         <View style={styles.headerActionBadge}>
-                            <ToggleSwitch enabled={equalizerEnabled} onToggle={() => setEqualizerEnabled((value) => !value)} activeColor={C.green} />
+                            <ToggleSwitch enabled={equalizerEnabled} onToggle={() => setEqualizerEnabled((value) => !value)} activeColor={C.green} styles={styles} />
                         </View>
                     </View>
 
@@ -970,7 +932,7 @@ export default function PlayerScreen() {
                             <Text style={styles.settingRowTitle}>Audio focus</Text>
                             <Text style={styles.settingRowDescription}>{audioFocusEnabled ? 'Adaptive volume on' : 'Adaptive volume off'}</Text>
                         </View>
-                        <ToggleSwitch enabled={audioFocusEnabled} onToggle={() => setAudioFocusEnabled((value) => !value)} activeColor={C.green} />
+                        <ToggleSwitch enabled={audioFocusEnabled} onToggle={() => setAudioFocusEnabled((value) => !value)} activeColor={C.green} styles={styles} />
                     </Pressable>
                 </View>
 
@@ -1005,33 +967,13 @@ export default function PlayerScreen() {
 
                 <View style={styles.settingsSection}>
                     <Text style={styles.sectionCaption}>Library</Text>
-                    <View style={styles.settingCard}>
-                        <View style={styles.settingIcon}><Ionicons name="musical-notes-outline" size={18} color={accent} /></View>
-                        <View style={styles.flexOne}>
-                            <Text style={styles.cardTitle}>Device library</Text>
-                            <Text style={styles.cardSub}>{permissionGranted ? `${tracks.length} tracks available` : 'Access media files on this device'}</Text>
-                        </View>
-                        <Pressable onPress={scanLibrary} style={styles.smallAction}>
-                            <Text style={styles.smallActionText}>{loading ? 'Scanning' : 'Rescan'}</Text>
-                        </Pressable>
-                    </View>
-
-                    <Pressable style={styles.settingRow} onPress={() => setLibraryAutoScan((value) => !value)}>
-                        <View style={styles.settingRowIcon}><Ionicons name="scan-outline" size={20} color={C.green} /></View>
-                        <View style={styles.settingRowText}>
-                            <Text style={styles.settingRowTitle}>Auto scan</Text>
-                            <Text style={styles.settingRowDescription}>{libraryAutoScan ? 'On' : 'Off'}</Text>
-                        </View>
-                        <ToggleSwitch enabled={libraryAutoScan} onToggle={() => setLibraryAutoScan((value) => !value)} activeColor={C.green} />
-                    </Pressable>
-
                     <Pressable style={styles.settingRow} onPress={() => setSmartImportEnabled((value) => !value)}>
                         <View style={styles.settingRowIcon}><Ionicons name="folder-open-outline" size={20} color={C.green} /></View>
                         <View style={styles.settingRowText}>
                             <Text style={styles.settingRowTitle}>Smart import</Text>
                             <Text style={styles.settingRowDescription}>{smartImportEnabled ? 'Organize automatically' : 'Ask before importing'}</Text>
                         </View>
-                        <ToggleSwitch enabled={smartImportEnabled} onToggle={() => setSmartImportEnabled((value) => !value)} activeColor={C.green} />
+                        <ToggleSwitch enabled={smartImportEnabled} onToggle={() => setSmartImportEnabled((value) => !value)} activeColor={C.green} styles={styles} />
                     </Pressable>
 
                     <Pressable style={styles.settingRow} onPress={importMusicFiles}>
@@ -1044,9 +986,6 @@ export default function PlayerScreen() {
                     </Pressable>
                 </View>
 
-                {permissionGranted === false ? (
-                    <Text style={styles.helperText}>Audio access was declined. Enable media access in iPhone Settings to scan your library.</Text>
-                ) : null}
             </ScrollView>
         );
     }
@@ -1060,9 +999,9 @@ export default function PlayerScreen() {
         return (
             <View style={styles.nowPlaying}>
                 <View style={styles.nowTop}>
-                    <IconButton name="chevron-down" color={C.text} onPress={() => setShowNowPlaying(false)} style={styles.headerIcon} accessibilityLabel="Close player" />
+                    <IconButton name="chevron-down" color={C.text} onPress={() => setShowNowPlaying(false)} style={styles.headerIcon} accessibilityLabel="Close player" styles={styles} />
                     <View style={{ flex: 1, alignItems: 'center' }}><Text style={styles.nowEyebrow}>NOW PLAYING</Text><Text style={styles.nowContext}>From {queue.length ? 'your library' : 'Wave Music'}</Text></View>
-                    <IconButton name="ellipsis-horizontal" color={C.text} onPress={() => showTrackOptions(activeTrack)} style={styles.headerIcon} accessibilityLabel="Track options" />
+                    <IconButton name="ellipsis-horizontal" color={C.text} onPress={() => showTrackOptions(activeTrack)} style={styles.headerIcon} accessibilityLabel="Track options" styles={styles} />
                 </View>
                 <View style={styles.largeArtworkFrame}>
                     <View style={[styles.largeArtwork, { borderColor: `${accent}35` }]}>
@@ -1082,7 +1021,7 @@ export default function PlayerScreen() {
                         <Text numberOfLines={1} style={styles.nowTitle}>{activeTrack.title}</Text>
                         <Text numberOfLines={1} style={[styles.nowArtist, { color: accent }]}>{activeTrack.artist}  ·  {activeTrack.album}</Text>
                     </View>
-                    <IconButton name={favorites.includes(activeTrack.id) ? 'heart' : 'heart-outline'} color={favorites.includes(activeTrack.id) ? accent : C.secondary} size={25} onPress={() => toggleFavorite(activeTrack)} accessibilityLabel="Like track" />
+                    <IconButton name={favorites.includes(activeTrack.id) ? 'heart' : 'heart-outline'} color={favorites.includes(activeTrack.id) ? accent : C.secondary} size={25} onPress={() => toggleFavorite(activeTrack)} accessibilityLabel="Like track" styles={styles} />
                 </View>
                 <View
                     onLayout={(event) => setScrubWidth(event.nativeEvent.layout.width)}
@@ -1105,11 +1044,11 @@ export default function PlayerScreen() {
                 <View style={styles.timeLabels}><Text style={styles.timeLabel}>{formatDuration(displayedCurrent)}</Text><Text style={styles.timeLabel}>{formatDuration(Math.max(0, duration - displayedCurrent))}</Text></View>
                 {status.error ? <Text style={styles.playbackError}>{status.error}</Text> : null}
                 <View style={styles.transport}>
-                    <IconButton name="play-skip-back" size={26} color={C.secondary} onPress={() => playNext(-1)} accessibilityLabel="Previous track" />
+                    <IconButton name="play-skip-back" size={26} color={C.secondary} onPress={() => playNext(-1)} accessibilityLabel="Previous track" styles={styles} />
                     <Pressable style={({ pressed }) => [styles.playButton, { backgroundColor: accent }, pressed && styles.pressed]} onPress={togglePlay} accessibilityRole="button" accessibilityLabel={status.playing ? 'Pause' : 'Play'}>
                         <Ionicons name={status.playing ? 'pause' : 'play'} size={34} color={C.background} style={!status.playing ? { marginLeft: 4 } : undefined} />
                     </Pressable>
-                    <IconButton name="play-skip-forward" size={26} color={C.secondary} onPress={() => playNext(1)} accessibilityLabel="Next track" />
+                    <IconButton name="play-skip-forward" size={26} color={C.secondary} onPress={() => playNext(1)} accessibilityLabel="Next track" styles={styles} />
                 </View>
                 <View style={styles.waveformBand}>
                     <WaveformVisualizer playing={status.playing} accent={accent} />
@@ -1212,7 +1151,7 @@ export default function PlayerScreen() {
             <View style={styles.topBar}>
                 <View style={styles.brandDot}><Ionicons name="pulse" size={18} color={C.background} /></View>
                 <View style={styles.flexOne}><Text style={styles.brandName}>WAVE</Text><Text style={styles.brandCaption}>YOUR MUSIC, YOUR CURRENT</Text></View>
-                <IconButton name="person-circle-outline" color={C.secondary} onPress={() => { setActiveTab('Settings'); setSettingsView('main'); }} accessibilityLabel="Open settings" />
+                <IconButton name="person-circle-outline" color={C.secondary} onPress={() => { setActiveTab('Settings'); setSettingsView('main'); }} accessibilityLabel="Open settings" styles={styles} />
             </View>
             <View style={styles.content}>
                 {activeTab === 'Tracks' ? renderTracks() : null}
@@ -1223,10 +1162,10 @@ export default function PlayerScreen() {
             </View>
             {activeTrack ? (
                 <Pressable style={styles.miniPlayer} onPress={() => setShowNowPlaying(true)} accessibilityRole="button" accessibilityLabel="Open now playing">
-                    <Artwork size={44} iconSize={21} rounded={12} tint={accent} uri={activeTrack.artworkUri} />
+                    <Artwork size={44} iconSize={21} rounded={12} tint={accent} uri={activeTrack.artworkUri} styles={styles} />
                     <View style={styles.miniText}><Text numberOfLines={1} style={styles.miniTitle}>{activeTrack.title}</Text><Text numberOfLines={1} style={styles.miniSubtitle}>{activeTrack.artist}</Text></View>
-                    <IconButton name={status.playing ? 'pause' : 'play'} color={accent} size={23} onPress={togglePlay} accessibilityLabel={status.playing ? 'Pause' : 'Play'} />
-                    <IconButton name="play-skip-forward" color={C.text} size={21} onPress={() => playNext(1)} accessibilityLabel="Next track" />
+                    <IconButton name={status.playing ? 'pause' : 'play'} color={accent} size={23} onPress={togglePlay} accessibilityLabel={status.playing ? 'Pause' : 'Play'} styles={styles} />
+                    <IconButton name="play-skip-forward" color={C.text} size={21} onPress={() => playNext(1)} accessibilityLabel="Next track" styles={styles} />
                 </Pressable>
             ) : null}
             <View style={styles.tabBar}>

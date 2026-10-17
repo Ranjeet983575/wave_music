@@ -9,13 +9,11 @@ const C = APP_THEME;
 export default function TracksScreen({
   tracks,
   loading,
-  permissionGranted,
   error,
   searchOpen,
   search,
   setSearch,
   setSearchOpen,
-  onScanLibrary,
   onImportMusicFiles,
   onPlayTrack,
   favorites,
@@ -42,12 +40,9 @@ export default function TracksScreen({
         ListEmptyComponent={(
           <EmptyState
             icon="musical-notes-outline"
-            title={loading ? 'Finding your music' : error ? 'Library unavailable' : 'No tracks here yet'}
-            detail={loading ? 'Scanning audio stored on this device.' : error || 'Allow audio access or add songs to your device library.'}
-            action={!loading && !error ? 'Scan device again' : undefined}
-            busy={loading}
-            onAction={onScanLibrary}
-            secondaryAction={!loading && !error ? 'Import from Files' : undefined}
+            title="No tracks here yet"
+            detail="Import music from Files to start listening."
+            secondaryAction="Import from Files"
             onSecondaryAction={onImportMusicFiles}
             stylesOverride={styles}
           />
@@ -57,22 +52,7 @@ export default function TracksScreen({
   }
 
   if (loading && tracks.length === 0) {
-    return <EmptyState icon="radio-outline" title="Finding your music" detail="Scanning audio stored on this device." busy stylesOverride={styles} />;
-  }
-
-  if (permissionGranted === false && tracks.length === 0) {
-    return (
-      <EmptyState
-        icon="lock-closed-outline"
-        title="Music access is off"
-        detail="Allow audio access to scan the device library, or import individual songs from Files."
-        action="Request access"
-        onAction={onScanLibrary}
-        secondaryAction="Import from Files"
-        onSecondaryAction={onImportMusicFiles}
-        stylesOverride={styles}
-      />
-    );
+    return <EmptyState icon="radio-outline" title="No music yet" detail="Import audio from Files to begin." busy={false} stylesOverride={styles} secondaryAction="Import from Files" onSecondaryAction={onImportMusicFiles} />;
   }
 
   return (
@@ -104,7 +84,6 @@ export default function TracksScreen({
           <Text style={styles.shuffleText}>Shuffle play</Text>
         </Pressable>
         <IconButton name="search" size={19} color={C.secondary} onPress={() => setSearchOpen(true)} style={styles.searchToggle} accessibilityLabel="Search tracks" />
-        <IconButton name="refresh" size={19} color={C.secondary} onPress={onScanLibrary} style={styles.searchToggle} accessibilityLabel="Rescan device music" />
       </View>
       {renderTrackList(filteredTracks)}
     </>
