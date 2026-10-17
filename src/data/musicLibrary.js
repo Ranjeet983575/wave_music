@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import { Directory, File, Paths } from 'expo-file-system';
+import { parseBuffer } from 'music-metadata';
 
 const PLAYLISTS_KEY = '@wave-music/playlists-v1';
 const FAVORITES_KEY = '@wave-music/favorites-v1';
 const IMPORTED_TRACKS_KEY = '@wave-music/imported-tracks-v1';
+const ARTWORK_EXTRACTION_VERSION = 6;
 
 function titleFromFilename(filename) {
     const safeName = typeof filename === 'string' ? filename : '';
@@ -82,6 +84,37 @@ function artworkKeysForMusicFile(musicFile) {
     return [...new Set(candidates.filter(Boolean))];
 }
 
+async function extractArtworkUri(audioUri, artworkName) {
+    try {
+        const audioFile = new File(audioUri);
+        const audioBytes = await audioFile.bytes();
+        const metadata = await parseBuffer(audioBytes);
+        const pictures = metadata.common.picture || [];
+        const picture = pictures.find((item) => /front|cover/i.test(`${item.type || ''} ${item.description || ''}`)) || pictures[0];
+        if (!picture?.data?.length || !picture.format?.startsWith('image/')) {
+            console.warn(`[WaveMusicArtwork] No embedded image found; bytes=${audioBytes.length}, pictures=${pictures.length}`);
+            return null;
+        }
+
+        const artworkDirectory = new Directory(Paths.document, 'WaveMusicArtwork');
+        if (!artworkDirectory.exists) {
+            artworkDirectory.create({ intermediates: true, idempotent: true });
+        }
+
+        const extension = picture.format.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+        const artworkFile = new File(artworkDirectory, `${artworkName}.${extension}`);
+        artworkFile.create({ intermediates: true, overwrite: true });
+        artworkFile.write(picture.data);
+        const savedArtwork = await artworkFile.bytes();
+        if (savedArtwork.length !== picture.data.length) throw new Error('Artwork file was not fully saved');
+        console.warn(`[WaveMusicArtwork] Saved image; bytes=${picture.data.length}`);
+        return artworkFile.uri;
+    } catch (error) {
+        console.warn('Could not extract embedded audio artwork', error);
+        return null;
+    }
+}
+
 export async function loadImportedTracks() {
     try {
         const saved = JSON.parse((await AsyncStorage.getItem(IMPORTED_TRACKS_KEY)) || '[]');
@@ -100,6 +133,11 @@ export async function loadImportedTracks() {
             if (prepared.uri) {
                 const file = new File(prepared.uri);
                 if (!file.exists) continue;
+
+                if (prepared.artworkExtractionVersion !== ARTWORK_EXTRACTION_VERSION) {
+                    prepared.artworkUri = await extractArtworkUri(prepared.uri, file.name);
+                    prepared.artworkExtractionVersion = ARTWORK_EXTRACTION_VERSION;
+                }
             }
 
             normalized.push(prepared);
@@ -112,14 +150,8 @@ export async function loadImportedTracks() {
     }
 }
 
-export async function importAudioFiles() {
-    const selection = await DocumentPicker.getDocumentAsync({
-        type: 'audio/*',
-        multiple: true,
-        copyToCacheDirectory: true,
-    });
-    if (selection.canceled || !selection.assets?.length) return { additions: [], skipped: 0, canceled: true };
-
+export async function importAudioAssets(assets, source = 'files') {
+    if (!Array.isArray(assets) || !assets.length) return { additions: [], skipped: 0, canceled: false };
     const importDirectory = new Directory(Paths.document, 'WaveMusicImports');
     if (!importDirectory.exists) {
         importDirectory.create({ intermediates: true, idempotent: true });
@@ -129,21 +161,23 @@ export async function importAudioFiles() {
     const additions = [];
     let skipped = 0;
     const seen = [...importedTracks];
-    for (const [index, asset] of selection.assets.entries()) {
+    for (const [index, asset] of assets.entries()) {
         const sourceUri = asset?.uri || '';
         if (!sourceUri) {
             skipped += 1;
             continue;
         }
 
-        const candidate = { filename: asset.name, size: Number.isFinite(asset.size) ? asset.size : 0, uri: sourceUri };
+        const filename = typeof asset.name === 'string' && asset.name ? asset.name : `shared-audio-${Date.now()}`;
+        const size = Number.isFinite(asset.size) ? Number(asset.size) : 0;
+        const candidate = { filename, size, uri: sourceUri };
         if (seen.some((track) => isSameImportedFile(track, candidate))) {
             skipped += 1;
             continue;
         }
 
-        const filename = asset.name.replace(/[^a-zA-Z0-9._-]+/g, '_');
-        const destinationFile = new File(importDirectory, `${Date.now()}-${index}-${filename}`);
+        const safeFilename = filename.replace(/[^a-zA-Z0-9._-]+/g, '_');
+        const destinationFile = new File(importDirectory, `${Date.now()}-${index}-${safeFilename}`);
 
         try {
             const sourceFile = new File(sourceUri);
@@ -153,14 +187,16 @@ export async function importAudioFiles() {
             const track = {
                 id: `import:${destinationFile.uri}`,
                 uri: destinationFile.uri,
-                filename: asset.name,
-                size: asset.size || 0,
-                title: titleFromFilename(asset.name),
+                artworkUri: await extractArtworkUri(destinationFile.uri, destinationFile.name),
+                artworkExtractionVersion: ARTWORK_EXTRACTION_VERSION,
+                filename,
+                size,
+                title: titleFromFilename(filename),
                 artist: 'Unknown artist',
                 album: 'Imported audio',
                 duration: 0,
                 creationTime: asset.lastModified || Date.now(),
-                source: 'files',
+                source,
             };
             additions.push(track);
             seen.push(track);
@@ -172,6 +208,16 @@ export async function importAudioFiles() {
     const merged = [...importedTracks, ...additions];
     await saveImportedTracks(merged);
     return { additions, skipped, canceled: false };
+}
+
+export async function importAudioFiles() {
+    const selection = await DocumentPicker.getDocumentAsync({
+        type: 'audio/*',
+        multiple: true,
+        copyToCacheDirectory: true,
+    });
+    if (selection.canceled || !selection.assets?.length) return { additions: [], skipped: 0, canceled: true };
+    return importAudioAssets(selection.assets);
 }
 
 export async function saveImportedTracks(tracks) {

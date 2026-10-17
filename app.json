@@ -17,7 +17,18 @@
     "ios": {
       "bundleIdentifier": "com.ranjeet983575.wave-music",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "LSSupportsOpeningDocumentsInPlace": false,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "Audio File",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.audio"
+            ]
+          }
+        ]
       }
     },
     "android": {

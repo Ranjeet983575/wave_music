@@ -4,7 +4,9 @@ import {
     Alert,
     FlatList,
     Image,
+    Linking,
     Modal,
+    PanResponder,
     Platform,
     Pressable,
     ScrollView,
@@ -19,6 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { PlaybackNotificationManager } from 'react-native-audio-api';
 import {
     formatDuration,
+    importAudioAssets,
     importAudioFiles,
     loadFavorites,
     loadImportedTracks,
@@ -102,6 +105,25 @@ export default function PlayerScreen() {
     const [bassBoostWidth, setBassBoostWidth] = useState(1);
     const audioPlayerRef = useRef(null);
     const notificationActionRef = useRef(null);
+    const incomingAudioUrisRef = useRef(new Set());
+    const artworkPanResponder = useMemo(() => PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => (
+            Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
+        ),
+        onPanResponderRelease: (_, gesture) => {
+            if (gesture.dx > 70) notificationActionRef.current?.playNext(1);
+            if (gesture.dx < -70) notificationActionRef.current?.playNext(-1);
+        },
+    }), []);
+    const miniArtworkPanResponder = useMemo(() => PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gesture) => (
+            Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2
+        ),
+        onPanResponderRelease: (_, gesture) => {
+            if (gesture.dx > 22) notificationActionRef.current?.playNext(1);
+            if (gesture.dx < -22) notificationActionRef.current?.playNext(-1);
+        },
+    }), []);
     const [status, setStatus] = useState({
         isLoaded: false,
         playing: false,
@@ -144,13 +166,28 @@ export default function PlayerScreen() {
         Promise.all([loadPlaylists(), loadFavorites(), loadImportedTracks()]).then(([storedPlaylists, storedFavorites, importedTracks]) => {
             setPlaylists(storedPlaylists);
             setFavorites(storedFavorites);
-            setTracks(Array.isArray(importedTracks) ? importedTracks : []);
+            setTracks((current) => [...new Map([...(Array.isArray(importedTracks) ? importedTracks : []), ...current].map((track) => [track.id, track])).values()].sort((a, b) => a.title.localeCompare(b.title)));
         }).catch(() => {
             setTracks([]);
         });
 
         setLoading(false);
         setError('');
+    }, []);
+
+    useEffect(() => {
+        let isMounted = true;
+        const subscription = Linking.addEventListener('url', ({ url }) => {
+            if (isMounted) importReceivedAudio(url);
+        });
+        Linking.getInitialURL().then((url) => {
+            if (isMounted && url) importReceivedAudio(url);
+        }).catch(() => { });
+
+        return () => {
+            isMounted = false;
+            subscription.remove();
+        };
     }, []);
 
     useEffect(() => {
@@ -306,6 +343,37 @@ export default function PlayerScreen() {
         }
     }
 
+    async function importReceivedAudio(uri) {
+        if (typeof uri !== 'string' || incomingAudioUrisRef.current.has(uri) || !/^(file|content):\/\//i.test(uri)) return;
+
+        const path = uri.split(/[?#]/, 1)[0];
+        let filename = path.split('/').pop() || '';
+        try {
+            filename = decodeURIComponent(filename);
+        } catch {
+            return;
+        }
+        if (!/\.(aac|aif|aiff|alac|flac|m4a|mp3|oga|ogg|opus|wav)$/i.test(filename)) return;
+
+        incomingAudioUrisRef.current.add(uri);
+        setImporting(true);
+        try {
+            const { additions, skipped } = await importAudioAssets([{ uri, name: filename }], 'shared');
+            if (additions.length) {
+                setTracks((current) => [...new Map([...current, ...additions].map((track) => [track.id, track])).values()].sort((a, b) => a.title.localeCompare(b.title)));
+                setActiveTab('Tracks');
+                Alert.alert('Audio received', `Added ${additions[0].title} to your library.`);
+            } else if (skipped) {
+                Alert.alert('Could not receive audio', 'Wave Music could not copy this shared file. Try sharing it again or use Import from Files.');
+            }
+        } catch (receiveError) {
+            incomingAudioUrisRef.current.delete(uri);
+            Alert.alert('Could not receive audio', receiveError?.message || 'Try sharing the audio file again.');
+        } finally {
+            setImporting(false);
+        }
+    }
+
     async function shareTrack(track) {
         if (!track?.uri) {
             Alert.alert('Share unavailable', 'This track has no file URL available to share.');
@@ -335,36 +403,6 @@ export default function PlayerScreen() {
                     text: 'Send', onPress: () => {
                         if (!trackOptions.length) {
                             Alert.alert('No music to send', 'Import a track first, then choose Send.');
-                            return;
-                        }
-
-                        const items = trackOptions.map((track) => ({
-                            text: track.title || 'Track',
-                            onPress: () => shareTrack(track),
-                        }));
-                        Alert.alert('Select a track to send', '', [
-                            ...items,
-                            { text: 'Cancel', style: 'cancel' },
-                        ]);
-                    }
-                },
-                { text: 'Cancel', style: 'cancel' },
-            ],
-        );
-    }
-
-    function handleAppleDeviceTransferChoice() {
-        const trackOptions = tracks.length ? tracks : [];
-
-        Alert.alert(
-            'Apple device transfer',
-            'Choose whether to receive files from another iPhone, iPad, or iPod, or send music to one.',
-            [
-                { text: 'Receive from another Apple device', onPress: importMusicFiles },
-                {
-                    text: 'Send to another Apple device', onPress: () => {
-                        if (!trackOptions.length) {
-                            Alert.alert('No music to send', 'Import a track first, then choose Send to another Apple device.');
                             return;
                         }
 
@@ -783,9 +821,8 @@ export default function PlayerScreen() {
 
     function renderImports() {
         const importSources = [
-            { title: 'Share', subtitle: 'Send or receive tracks', icon: 'share-social-outline', color: '#55B9FF', onPress: handleTransferChoice },
+            { title: 'Share & receive', subtitle: 'Send tracks or receive shared audio', icon: 'share-social-outline', color: '#55B9FF', onPress: handleTransferChoice },
             { title: 'Computer', subtitle: 'Using Wi-Fi', icon: 'desktop-outline', color: '#55B9FF', message: 'Computer transfer is not available yet.' },
-            { title: 'iPhone / iPad / iPod', subtitle: 'Transfer tracks', icon: 'phone-portrait-outline', color: '#E27777', onPress: handleAppleDeviceTransferChoice },
             { title: 'Files', subtitle: 'Import tracks from files', icon: 'folder', color: '#58AEFF', onPress: importMusicFiles },
         ];
         return (
@@ -1126,7 +1163,7 @@ export default function PlayerScreen() {
                     <View style={{ flex: 1, alignItems: 'center' }}><Text style={styles.nowEyebrow}>NOW PLAYING</Text><Text style={styles.nowContext}>From {queue.length ? 'your library' : 'Wave Music'}</Text></View>
                     <IconButton name="ellipsis-horizontal" color={C.text} onPress={() => showTrackOptions(activeTrack)} style={styles.headerIcon} accessibilityLabel="Track options" styles={styles} />
                 </View>
-                <View style={styles.largeArtworkFrame}>
+                <View style={styles.largeArtworkFrame} {...artworkPanResponder.panHandlers}>
                     <View style={[styles.largeArtwork, { borderColor: `${accent}35` }]}>
                         {activeTrack.artworkUri ? (
                             <Image source={{ uri: activeTrack.artworkUri }} style={styles.largeArtworkImage} resizeMode="cover" />
@@ -1301,7 +1338,7 @@ export default function PlayerScreen() {
             <View style={styles.topBar}>
                 <View style={styles.brandDot}><Ionicons name="pulse" size={18} color={C.background} /></View>
                 <View style={styles.flexOne}><Text style={styles.brandName}>WAVE</Text><Text style={styles.brandCaption}>YOUR MUSIC, YOUR CURRENT</Text></View>
-                <IconButton name="person-circle-outline" color={C.secondary} onPress={() => { setActiveTab('Settings'); setSettingsView('main'); }} accessibilityLabel="Open settings" styles={styles} />
+                <IconButton name="person-circle-outline" color={C.green} onPress={() => { setActiveTab('Settings'); setSettingsView('main'); }} accessibilityLabel="Open settings" styles={styles} />
             </View>
             <View style={styles.content}>
                 {activeTab === 'Tracks' ? renderTracks() : null}
@@ -1312,7 +1349,9 @@ export default function PlayerScreen() {
             </View>
             {activeTrack ? (
                 <Pressable style={styles.miniPlayer} onPress={() => setShowNowPlaying(true)} accessibilityRole="button" accessibilityLabel="Open now playing">
-                    <Artwork size={44} iconSize={21} rounded={12} tint={accent} uri={activeTrack.artworkUri} styles={styles} />
+                    <View {...miniArtworkPanResponder.panHandlers}>
+                        <Artwork size={44} iconSize={21} rounded={12} tint={accent} uri={activeTrack.artworkUri} styles={styles} />
+                    </View>
                     <View style={styles.miniText}><Text numberOfLines={1} style={styles.miniTitle}>{activeTrack.title}</Text><Text numberOfLines={1} style={styles.miniSubtitle}>{activeTrack.artist}</Text></View>
                     <IconButton name={status.playing ? 'pause' : 'play'} color={accent} size={23} onPress={togglePlay} accessibilityLabel={status.playing ? 'Pause' : 'Play'} styles={styles} />
                     <IconButton name="play-skip-forward" color={C.text} size={21} onPress={() => playNext(1)} accessibilityLabel="Next track" styles={styles} />
@@ -1420,6 +1459,7 @@ const styles = StyleSheet.create({
     trackMeta: { flexDirection: 'row', alignItems: 'center', gap: 1 },
     trackDuration: { color: C.dim, fontSize: 11, width: 38, textAlign: 'right' },
     artwork: { backgroundColor: '#1A2420', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+    artworkImage: { width: '100%', height: '100%' },
     artworkGlow: { position: 'absolute', width: '140%', height: '140%', borderRadius: 100, top: '42%', backgroundColor: '#24372D', opacity: 0.75 },
     emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 34, paddingVertical: 52 },
     emptyIcon: { width: 74, height: 74, borderRadius: 25, alignItems: 'center', justifyContent: 'center', backgroundColor: '#18211C', marginBottom: 19 },
@@ -1519,6 +1559,7 @@ const styles = StyleSheet.create({
     nowContext: { color: C.dim, fontSize: 10, marginTop: 4 },
     largeArtworkFrame: { flex: 1, minHeight: 250, maxHeight: 440, justifyContent: 'center', paddingVertical: 18 },
     largeArtwork: { flex: 1, minHeight: 250, borderRadius: 24, backgroundColor: '#121A16', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', borderWidth: 1 },
+    largeArtworkImage: { width: '100%', height: '100%' },
     largeArtworkGlow: { position: 'absolute', width: 260, height: 260, borderRadius: 130, opacity: 0.08 },
     artworkIndex: { position: 'absolute', bottom: 16, right: 18, width: 29, height: 29, borderRadius: 10, backgroundColor: '#FFFFFF0D', alignItems: 'center', justifyContent: 'center' },
     artworkIndexText: { color: C.secondary, fontSize: 12, fontWeight: '800' },
