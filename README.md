@@ -109,6 +109,8 @@ For a physical iPhone install, prefer this exact command:
 
 ```bash
 npx expo run:ios --device "Your iPhone Name" --configuration Release
+
+npx expo run:ios --device "Ranjeet Kumar’s iPhone" --configuration Release
 ```
 
 ## Useful debugging command
