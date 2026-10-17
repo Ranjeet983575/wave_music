@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { setAudioModeAsync, useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { PlaybackNotificationManager } from 'react-native-audio-api';
 import {
     formatDuration,
     importAudioFiles,
@@ -29,8 +29,9 @@ import {
 } from '../../data/musicLibrary';
 import { DEFAULT_EQ_LEVELS, DEFAULT_PLAYBACK_SETTINGS, loadPlaybackSettings, savePlaybackSettings } from '../../data/playbackSettings';
 import { DEFAULT_APPEARANCE_SETTINGS, loadAppearanceSettings, saveAppearanceSettings } from '../../data/appearanceSettings';
-import { ACCENT_COLORS, APP_THEME, LIGHT_THEME } from '../../constants/theme';
+import { ACCENT_COLORS, APP_THEME, EQ_FREQUENCIES, LIGHT_THEME, PRESET_MAP } from '../../constants/theme';
 import WaveformVisualizer from '../../components/WaveformVisualizer';
+import EqualizedAudioPlayer from '../../components/EqualizedAudioPlayer';
 import { Artwork, EmptyState, IconButton, ToggleSwitch, TrackRow } from '../../components/Player/PlayerControls';
 import AdvancedSettingsScreen from '../AdvancedSettingsScreen';
 
@@ -85,7 +86,7 @@ export default function PlayerScreen() {
     const [accent, setAccent] = useState(DEFAULT_APPEARANCE_SETTINGS.accent);
     const [themeMode, setThemeMode] = useState(DEFAULT_APPEARANCE_SETTINGS.themeMode);
     const [appearanceSettingsReady, setAppearanceSettingsReady] = useState(false);
-    const [equalizerEnabled, setEqualizerEnabled] = useState(true);
+    const [equalizerEnabled, setEqualizerEnabled] = useState(DEFAULT_PLAYBACK_SETTINGS.equalizerEnabled);
     const [audioFocusEnabled, setAudioFocusEnabled] = useState(true);
     const [libraryAutoScan, setLibraryAutoScan] = useState(true);
     const [smartImportEnabled, setSmartImportEnabled] = useState(false);
@@ -93,27 +94,53 @@ export default function PlayerScreen() {
     const [advancedSettings, setAdvancedSettings] = useState(DEFAULT_PLAYBACK_SETTINGS);
     const [advancedSettingsReady, setAdvancedSettingsReady] = useState(false);
     const [eqLevels, setEqLevels] = useState(DEFAULT_EQ_LEVELS);
-    const [selectedPreset, setSelectedPreset] = useState('Custom');
-    const [selectedReverb, setSelectedReverb] = useState('Off');
+    const [selectedPreset, setSelectedPreset] = useState(DEFAULT_PLAYBACK_SETTINGS.selectedPreset);
+    const [selectedReverb, setSelectedReverb] = useState(DEFAULT_PLAYBACK_SETTINGS.selectedReverb);
     const [preamp, setPreamp] = useState(0);
     const [bassBoost, setBassBoost] = useState(0);
     const [preampWidth, setPreampWidth] = useState(1);
     const [bassBoostWidth, setBassBoostWidth] = useState(1);
+    const audioPlayerRef = useRef(null);
+    const notificationActionRef = useRef(null);
+    const [status, setStatus] = useState({
+        isLoaded: false,
+        playing: false,
+        didJustFinish: false,
+        currentTime: 0,
+        duration: 0,
+        error: null,
+    });
 
-    const player = useAudioPlayer(activeTrack?.uri || null, { updateInterval: 400 });
-    const status = useAudioPlayerStatus(player);
+    const player = useMemo(() => ({
+        play: () => audioPlayerRef.current?.play(),
+        pause: () => audioPlayerRef.current?.pause(),
+        seekTo: (seconds) => audioPlayerRef.current?.seekTo(seconds),
+        setPlaybackRate: (rate) => audioPlayerRef.current?.setPlaybackRate(rate),
+        set volume(value) {
+            audioPlayerRef.current?.setVolume(value);
+        },
+    }), []);
     const completedTrackRef = useRef(null);
     const isLightTheme = themeMode === 'Light';
     const C = useMemo(() => ({ ...(isLightTheme ? LIGHT_THEME : APP_THEME), green: accent }), [accent, isLightTheme]);
     const styles = useMemo(() => createAppearanceStyles(C, isLightTheme), [C, isLightTheme]);
+    const handleAudioStatusChange = useCallback((nextStatus) => {
+        setStatus((current) => ({
+            ...current,
+            ...nextStatus,
+            ...(nextStatus.playing ? { didJustFinish: false, error: null } : {}),
+        }));
+    }, []);
+    const handleAudioError = useCallback((audioError) => {
+        const message = audioError instanceof Error ? audioError.message : String(audioError);
+        console.warn('Audio playback failed', audioError);
+        setStatus((current) => ({ ...current, error: message }));
+    }, []);
+    const handleAudioEnded = useCallback(() => {
+        setStatus((current) => ({ ...current, playing: false, didJustFinish: true }));
+    }, []);
 
     useEffect(() => {
-        setAudioModeAsync({
-            playsInSilentMode: true,
-            shouldPlayInBackground: true,
-            interruptionMode: 'doNotMix',
-        }).catch(() => { });
-
         Promise.all([loadPlaylists(), loadFavorites(), loadImportedTracks()]).then(([storedPlaylists, storedFavorites, importedTracks]) => {
             setPlaylists(storedPlaylists);
             setFavorites(storedFavorites);
@@ -125,20 +152,6 @@ export default function PlayerScreen() {
         setLoading(false);
         setError('');
     }, []);
-
-    useEffect(() => {
-        if (!player || typeof player.setActiveForLockScreen !== 'function') return;
-        if (!activeTrack) {
-            player.setActiveForLockScreen(false);
-            return;
-        }
-        player.setActiveForLockScreen(true, {
-            title: activeTrack.title,
-            artist: activeTrack.artist,
-            albumTitle: activeTrack.album,
-            artworkUrl: activeTrack.artworkUri || undefined,
-        });
-    }, [activeTrack, player]);
 
     useEffect(() => {
         if (autoPlay && status.isLoaded) {
@@ -246,7 +259,6 @@ export default function PlayerScreen() {
 
     useEffect(() => {
         if (!player || !status.isLoaded) return;
-        player.shouldCorrectPitch = advancedSettings.pitchCorrection;
         player.setPlaybackRate(advancedSettings.playbackRate);
     }, [advancedSettings.pitchCorrection, advancedSettings.playbackRate, player, status.isLoaded]);
 
@@ -394,7 +406,24 @@ export default function PlayerScreen() {
     }, [tracks]);
 
     function playTrack(track, playQueue = tracks) {
+        if (activeTrack?.id !== track.id) {
+            player.pause();
+        } else if (status.playing) {
+            return;
+        }
         setQueue(playQueue.length ? playQueue : tracks);
+        if (activeTrack?.id !== track.id) {
+            setStatus({
+                isLoaded: false,
+                playing: false,
+                didJustFinish: false,
+                currentTime: 0,
+                duration: 0,
+                error: null,
+            });
+        } else {
+            setStatus((current) => ({ ...current, didJustFinish: false, error: null }));
+        }
         setActiveTrack(track);
         setAutoPlay(true);
     }
@@ -439,6 +468,61 @@ export default function PlayerScreen() {
         playTrack(nextTrack, source);
         return nextTrack;
     }
+
+    notificationActionRef.current = { player, playNext, status };
+    useEffect(() => {
+        const subscriptions = [
+            PlaybackNotificationManager.addEventListener('playbackNotificationPlay', () => notificationActionRef.current?.player.play()),
+            PlaybackNotificationManager.addEventListener('playbackNotificationPause', () => notificationActionRef.current?.player.pause()),
+            PlaybackNotificationManager.addEventListener('playbackNotificationStop', () => notificationActionRef.current?.player.pause()),
+            PlaybackNotificationManager.addEventListener('playbackNotificationNextTrack', () => notificationActionRef.current?.playNext(1)),
+            PlaybackNotificationManager.addEventListener('playbackNotificationPreviousTrack', () => notificationActionRef.current?.playNext(-1)),
+            PlaybackNotificationManager.addEventListener('playbackNotificationSeekTo', (event) => {
+                if (Number.isFinite(event?.value)) notificationActionRef.current?.player.seekTo(event.value);
+            }),
+            PlaybackNotificationManager.addEventListener('playbackNotificationSkipForward', (event) => {
+                const amount = Number.isFinite(event?.value) ? event.value : 15;
+                const current = notificationActionRef.current?.status;
+                if (current) notificationActionRef.current.player.seekTo(Math.min(current.duration, current.currentTime + amount));
+            }),
+            PlaybackNotificationManager.addEventListener('playbackNotificationSkipBackward', (event) => {
+                const amount = Number.isFinite(event?.value) ? event.value : 15;
+                const current = notificationActionRef.current?.status;
+                if (current) notificationActionRef.current.player.seekTo(Math.max(0, current.currentTime - amount));
+            }),
+        ];
+
+        return () => subscriptions.forEach((subscription) => subscription?.remove());
+    }, []);
+
+    const notificationElapsedTime = Math.floor(status.currentTime);
+    useEffect(() => {
+        if (!activeTrack) {
+            PlaybackNotificationManager.hide().catch((notificationError) => {
+                console.warn('Failed to hide playback notification', notificationError);
+            });
+            return;
+        }
+
+        PlaybackNotificationManager.show({
+            title: activeTrack.title,
+            artist: activeTrack.artist,
+            album: activeTrack.album,
+            artwork: activeTrack.artworkUri || undefined,
+            duration: status.duration || undefined,
+            elapsedTime: notificationElapsedTime,
+            speed: status.playing ? advancedSettings.playbackRate : 0,
+            state: status.playing ? 'playing' : 'paused',
+        }).catch((notificationError) => {
+            console.warn('Failed to update playback notification', notificationError);
+        });
+    }, [
+        activeTrack,
+        advancedSettings.playbackRate,
+        notificationElapsedTime,
+        status.duration,
+        status.playing,
+    ]);
 
     async function toggleFavorite(track) {
         const next = favorites.includes(track.id)
@@ -529,9 +613,7 @@ export default function PlayerScreen() {
             && typeof VolumeManager.setVolume === 'function';
 
         if (!supportsVolumeManager) {
-            if (player && typeof player.volume !== 'undefined') {
-                player.volume = Math.min(next, advancedSettings.volumeLimit);
-            }
+            player.volume = Math.min(next, advancedSettings.volumeLimit);
             return;
         }
 
@@ -736,16 +818,20 @@ export default function PlayerScreen() {
     function renderSettings() {
         const themeOptions = ['Light', 'Dark'];
         const accentOptions = ACCENT_COLORS;
-        const frequencies = [31, 62, 125, 250, 500, 1, 2, 4, 8, 16];
-        const presetMap = {
-            Custom: [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7],
-            Flat: [0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.6, 0.58, 0.54, 0.5],
-            Acoustic: [0.7, 0.78, 0.72, 0.68, 0.7, 0.66, 0.6, 0.56, 0.58, 0.62],
-            Classical: [0.68, 0.7, 0.74, 0.82, 0.76, 0.7, 0.64, 0.6, 0.56, 0.52],
-        };
+        const presets = [
+            { key: 'Flat', label: 'Flat / Normal' },
+            { key: 'Bass Boost', label: 'Bass Boost' },
+            { key: 'Treble', label: 'Treble / Bright' },
+            { key: 'Rock', label: 'Rock' },
+            { key: 'Pop', label: 'Pop' },
+            { key: 'Classical', label: 'Classical' },
+            { key: 'Jazz', label: 'Jazz' },
+            { key: 'Dance', label: 'Dance' },
+        ];
 
         const updateEqLevel = (index, value) => {
-            const clamped = Math.max(0, Math.min(1, value));
+            const gainDb = Math.max(-12, Math.min(12, Math.round((value - 0.5) * 24)));
+            const clamped = (gainDb + 12) / 24;
             setSelectedPreset('Custom');
             setEqLevels((current) => current.map((level, levelIndex) => (levelIndex === index ? clamped : level)));
         };
@@ -757,12 +843,30 @@ export default function PlayerScreen() {
             updateEqLevel(index, ratio);
         };
 
+        const eqResponderProps = (index) => ({
+            onStartShouldSetResponder: () => true,
+            onMoveShouldSetResponder: () => true,
+            onResponderTerminationRequest: () => false,
+            onResponderGrant: (event) => handleEqPress(index, event),
+            onResponderMove: (event) => handleEqPress(index, event),
+        });
+
         const applyPreset = (preset) => {
-            const next = presetMap[preset];
+            const next = PRESET_MAP[preset];
             if (next) {
                 setSelectedPreset(preset);
                 setEqLevels(next);
+                setEqualizerEnabled(true);
             }
+        };
+
+        const resetEqualizer = () => {
+            setEqualizerEnabled(false);
+            setEqLevels(DEFAULT_EQ_LEVELS);
+            setSelectedPreset('Flat');
+            setSelectedReverb('Off');
+            setPreamp(0);
+            setBassBoost(0);
         };
 
         const applyReverb = (reverb) => {
@@ -772,7 +876,8 @@ export default function PlayerScreen() {
         const updateSliderValue = (setter, width, xPosition) => {
             const safeWidth = Math.max(1, width || 1);
             const ratio = Math.max(0, Math.min(1, xPosition / safeWidth));
-            setter((ratio * 2) - 1);
+            const gainDb = Math.round((ratio * 24) - 12);
+            setter(gainDb / 12);
         };
 
         const getSliderDisplay = (value) => ((value + 1) / 2) * 100;
@@ -814,17 +919,18 @@ export default function PlayerScreen() {
                     <View style={styles.eqVisualWrap}>
                         <View style={styles.eqBars}>
                             {eqLevels.map((ratio, index) => (
-                                <Pressable
-                                    key={frequencies[index]}
+                                <View
+                                    key={EQ_FREQUENCIES[index]}
                                     style={styles.eqBarColumn}
-                                    onPress={(event) => handleEqPress(index, event)}
                                 >
-                                    <Text style={styles.eqValue}>{ratio.toFixed(1)}</Text>
-                                    <View style={[styles.eqBarTrack, { height: 170 }]}>
+                                    <Text style={styles.eqValue}>{((ratio - 0.5) * 24).toFixed(0)} dB</Text>
+                                    <View {...eqResponderProps(index)} style={[styles.eqBarTrack, { height: 170 }]}>
                                         <View style={[styles.eqBarFill, { height: `${ratio * 100}%` }]} />
                                     </View>
-                                    <Text style={styles.eqFreq}>{frequencies[index]}{index >= 5 ? 'K' : ''}</Text>
-                                </Pressable>
+                                    <Text style={styles.eqFreq}>
+                                        {EQ_FREQUENCIES[index] >= 1000 ? `${EQ_FREQUENCIES[index] / 1000}K` : EQ_FREQUENCIES[index]}
+                                    </Text>
+                                </View>
                             ))}
                         </View>
                     </View>
@@ -832,18 +938,23 @@ export default function PlayerScreen() {
                     <View style={styles.presetSection}>
                         <View style={styles.presetRowHeader}>
                             <Text style={styles.presetTitle}>Presets</Text>
-                            <Pressable style={styles.savePresetButton}>
-                                <Text style={styles.savePresetText}>Save preset</Text>
-                            </Pressable>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <Text style={{ color: C.textMuted, fontSize: 12 }}>
+                                    {selectedPreset === 'Flat' ? 'Flat / Normal' : selectedPreset === 'Treble' ? 'Treble / Bright' : selectedPreset}
+                                </Text>
+                                <Pressable style={styles.savePresetButton} onPress={resetEqualizer}>
+                                    <Text style={styles.savePresetText}>Reset</Text>
+                                </Pressable>
+                            </View>
                         </View>
                         <View style={styles.presetGrid}>
-                            {['Custom', 'Flat', 'Acoustic', 'Classical'].map((preset) => (
+                            {presets.map(({ key, label }) => (
                                 <Pressable
-                                    key={preset}
-                                    style={[styles.presetChip, selectedPreset === preset && styles.presetChipActive]}
-                                    onPress={() => applyPreset(preset)}
+                                    key={key}
+                                    style={[styles.presetChip, selectedPreset === key && styles.presetChipActive]}
+                                    onPress={() => applyPreset(key)}
                                 >
-                                    <Text style={[styles.presetText, selectedPreset === preset && styles.presetTextActive]}>{preset}</Text>
+                                    <Text style={[styles.presetText, selectedPreset === key && styles.presetTextActive]}>{label}</Text>
                                 </Pressable>
                             ))}
                         </View>
@@ -867,31 +978,43 @@ export default function PlayerScreen() {
                     <View style={styles.sliderBlock}>
                         <View style={styles.sliderHeaderRow}>
                             <Text style={styles.presetTitle}>Preamp</Text>
-                            <Text style={styles.sliderValue}>{preamp.toFixed(1)} dB</Text>
+                            <Text style={styles.sliderValue}>{Math.round(preamp * 12)} dB</Text>
                         </View>
-                        <Pressable
+                        <View
                             onLayout={(event) => setPreampWidth(event.nativeEvent.layout.width)}
-                            onPress={(event) => updateSliderValue(setPreamp, preampWidth, event.nativeEvent.locationX)}
+                            onStartShouldSetResponder={() => true}
+                            onMoveShouldSetResponder={() => true}
+                            onResponderTerminationRequest={() => false}
+                            onResponderGrant={(event) => updateSliderValue(setPreamp, preampWidth, event.nativeEvent.locationX)}
+                            onResponderMove={(event) => updateSliderValue(setPreamp, preampWidth, event.nativeEvent.locationX)}
                             style={styles.sliderTrack}
                         >
-                            <View style={[styles.sliderFill, { width: `${getSliderDisplay(preamp)}%` }]} />
-                            <View style={[styles.sliderThumb, { left: `${getSliderDisplay(preamp)}%` }]} />
-                        </Pressable>
+                            <View style={styles.sliderRail}>
+                                <View style={[styles.sliderFill, { width: `${getSliderDisplay(preamp)}%` }]} />
+                                <View style={[styles.sliderThumb, { left: `${getSliderDisplay(preamp)}%` }]} />
+                            </View>
+                        </View>
                     </View>
 
                     <View style={styles.sliderBlock}>
                         <View style={styles.sliderHeaderRow}>
                             <Text style={styles.presetTitle}>Bass Boost</Text>
-                            <Text style={styles.sliderValue}>{bassBoost.toFixed(1)} dB</Text>
+                            <Text style={styles.sliderValue}>{Math.round(bassBoost * 12)} dB</Text>
                         </View>
-                        <Pressable
+                        <View
                             onLayout={(event) => setBassBoostWidth(event.nativeEvent.layout.width)}
-                            onPress={(event) => updateSliderValue(setBassBoost, bassBoostWidth, event.nativeEvent.locationX)}
+                            onStartShouldSetResponder={() => true}
+                            onMoveShouldSetResponder={() => true}
+                            onResponderTerminationRequest={() => false}
+                            onResponderGrant={(event) => updateSliderValue(setBassBoost, bassBoostWidth, event.nativeEvent.locationX)}
+                            onResponderMove={(event) => updateSliderValue(setBassBoost, bassBoostWidth, event.nativeEvent.locationX)}
                             style={styles.sliderTrack}
                         >
-                            <View style={[styles.sliderFill, { width: `${getSliderDisplay(bassBoost)}%` }]} />
-                            <View style={[styles.sliderThumb, { left: `${getSliderDisplay(bassBoost)}%` }]} />
-                        </Pressable>
+                            <View style={styles.sliderRail}>
+                                <View style={[styles.sliderFill, { width: `${getSliderDisplay(bassBoost)}%` }]} />
+                                <View style={[styles.sliderThumb, { left: `${getSliderDisplay(bassBoost)}%` }]} />
+                            </View>
+                        </View>
                     </View>
                 </ScrollView>
             );
@@ -1144,10 +1267,37 @@ export default function PlayerScreen() {
         );
     }
 
-    if (showNowPlaying && activeTrack) return renderNowPlaying();
+    const audioEngine = (
+        <EqualizedAudioPlayer
+            ref={audioPlayerRef}
+            source={activeTrack?.uri || ''}
+            equalizerEnabled={equalizerEnabled}
+            eqLevels={eqLevels}
+            preamp={preamp}
+            bassBoost={bassBoost}
+            selectedReverb={selectedReverb}
+            volume={volume}
+            volumeLimit={advancedSettings.volumeLimit}
+            playbackRate={advancedSettings.playbackRate}
+            pitchCorrection={advancedSettings.pitchCorrection}
+            onStatusChange={handleAudioStatusChange}
+            onEnded={handleAudioEnded}
+            onError={handleAudioError}
+        />
+    );
+
+    if (showNowPlaying && activeTrack) {
+        return (
+            <View style={styles.screen}>
+                {audioEngine}
+                {renderNowPlaying()}
+            </View>
+        );
+    }
 
     return (
         <View style={styles.screen}>
+            {audioEngine}
             <View style={styles.topBar}>
                 <View style={styles.brandDot}><Ionicons name="pulse" size={18} color={C.background} /></View>
                 <View style={styles.flexOne}><Text style={styles.brandName}>WAVE</Text><Text style={styles.brandCaption}>YOUR MUSIC, YOUR CURRENT</Text></View>
@@ -1326,9 +1476,10 @@ const styles = StyleSheet.create({
     sliderBlock: { marginTop: 18 },
     sliderHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
     sliderValue: { color: '#D9E0DD', fontSize: 16, fontWeight: '600' },
-    sliderTrack: { height: 12, borderRadius: 10, backgroundColor: '#2E3936', position: 'relative', justifyContent: 'center', overflow: 'hidden' },
+    sliderTrack: { height: 32, justifyContent: 'center' },
+    sliderRail: { height: 8, borderRadius: 10, backgroundColor: '#2E3936', position: 'relative' },
     sliderFill: { position: 'absolute', left: 0, top: 0, bottom: 0, backgroundColor: C.green, borderRadius: 10 },
-    sliderThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#F2F5F3', position: 'absolute', top: -5, transform: [{ translateX: -11 }], borderWidth: 1, borderColor: '#A7B6B0' },
+    sliderThumb: { width: 22, height: 22, borderRadius: 11, backgroundColor: '#F2F5F3', position: 'absolute', top: -7, transform: [{ translateX: -11 }], borderWidth: 1, borderColor: '#A7B6B0' },
     settingCard: { minHeight: 72, paddingHorizontal: 12, marginHorizontal: 4, borderRadius: 16, backgroundColor: '#1A201D', borderWidth: 1, borderColor: '#2A302E', flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 10 },
     settingIcon: { width: 38, height: 38, borderRadius: 12, backgroundColor: '#18251C', alignItems: 'center', justifyContent: 'center' },
     smallAction: { minHeight: 34, paddingHorizontal: 12, borderRadius: 11, backgroundColor: '#1E372A', justifyContent: 'center' },
@@ -1438,6 +1589,7 @@ function createAppearanceStyles(palette, isLightTheme) {
         presetTextActive: { color: palette.text },
         segmentTextActive: { color: palette.text },
         sliderFill: { backgroundColor: palette.green },
+        sliderRail: { backgroundColor: palette.surfaceRaised },
         addButton: { backgroundColor: palette.green },
         favoriteArt: { backgroundColor: palette.green },
         smallActionText: { color: palette.green },
@@ -1494,7 +1646,7 @@ function createAppearanceStyles(palette, isLightTheme) {
             presetChip: { backgroundColor: palette.surface, borderColor: palette.border },
             presetText: { color: palette.text },
             sliderValue: { color: palette.text },
-            sliderTrack: { backgroundColor: palette.surfaceRaised },
+            sliderRail: { backgroundColor: palette.surfaceRaised },
             sliderThumb: { backgroundColor: palette.surface, borderColor: palette.secondary },
             miniPlayer: { backgroundColor: palette.surface, borderColor: palette.border },
             miniTitle: { color: palette.text },

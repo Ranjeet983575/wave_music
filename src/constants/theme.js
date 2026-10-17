@@ -41,11 +41,25 @@ export const TABS = [
     { key: 'Settings', icon: 'settings-outline' },
 ];
 
-export const PRESET_MAP = {
-    Custom: [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7],
-    Flat: [0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.6, 0.58, 0.54, 0.5],
-    Acoustic: [0.7, 0.78, 0.72, 0.68, 0.7, 0.66, 0.6, 0.56, 0.58, 0.62],
-    Classical: [0.68, 0.7, 0.74, 0.82, 0.76, 0.7, 0.64, 0.6, 0.56, 0.52],
+export const EQ_FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+
+export const EQ_PRESET_GAINS_DB = {
+    Flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    'Bass Boost': [6, 5, 4, 2, 0, 0, 0, 0, -1, -2],
+    Treble: [-2, -1, 0, 0, 0, 1, 2, 4, 5, 5],
+    Rock: [4, 3, 1, -1, -2, 1, 3, 4, 3, 3],
+    Pop: [-1, 1, 3, 4, 2, 0, 1, 2, 3, 2],
+    Classical: [3, 2, 1, 0, -1, -1, 0, 2, 3, 4],
+    Jazz: [3, 2, 0, -1, -2, 0, 2, 3, 2, 2],
+    Dance: [5, 4, 2, 0, -1, 1, 3, 4, 5, 3],
 };
 
-export const EQ_FREQUENCIES = [31, 62, 125, 250, 500, 1, 2, 4, 8, 16];
+export const PRESET_MAP = {
+    Custom: Array(10).fill(0.5),
+    ...Object.fromEntries(
+        Object.entries(EQ_PRESET_GAINS_DB).map(([name, gains]) => [
+            name,
+            gains.map((gain) => (gain + 12) / 24),
+        ]),
+    ),
+};

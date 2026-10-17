@@ -2,8 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { PRESET_MAP } from '../constants/theme';
 
 const PLAYBACK_SETTINGS_KEY = '@wave-music/playback-settings-v1';
+const AUDIO_DEFAULTS_MIGRATION_KEY = '@wave-music/neutral-audio-defaults-v4';
 const REVERB_OPTIONS = ['Off', 'Room', 'Cathedral', 'Chamber'];
-export const DEFAULT_EQ_LEVELS = [0.66, 0.76, 0.82, 0.58, 0.72, 0.64, 0.75, 0.6, 0.86, 0.7];
+export const DEFAULT_EQ_LEVELS = Array(10).fill(0.5);
 
 export const DEFAULT_PLAYBACK_SETTINGS = {
     autoPlayNext: true,
@@ -14,12 +15,12 @@ export const DEFAULT_PLAYBACK_SETTINGS = {
     playbackRate: 1,
     volumeLimit: 1,
     volume: 1,
-    equalizerEnabled: true,
+    equalizerEnabled: false,
     audioFocusEnabled: true,
     libraryAutoScan: true,
     smartImportEnabled: false,
     eqLevels: DEFAULT_EQ_LEVELS,
-    selectedPreset: 'Custom',
+    selectedPreset: 'Flat',
     selectedReverb: 'Off',
     preamp: 0,
     bassBoost: 0,
@@ -34,7 +35,11 @@ function clamp(value, min, max) {
 function normalizeSettings(input) {
     const value = input && typeof input === 'object' ? input : {};
     const eqLevels = Array.isArray(value.eqLevels) && value.eqLevels.length === DEFAULT_EQ_LEVELS.length
-        ? value.eqLevels.map((level, index) => Number.isFinite(level) ? clamp(level, 0, 1) : DEFAULT_EQ_LEVELS[index])
+        ? value.eqLevels.map((level, index) => {
+            if (!Number.isFinite(level)) return DEFAULT_EQ_LEVELS[index];
+            const gainDb = Math.round((clamp(level, 0, 1) - 0.5) * 24);
+            return (gainDb + 12) / 24;
+        })
         : DEFAULT_EQ_LEVELS;
 
     return {
@@ -57,15 +62,32 @@ function normalizeSettings(input) {
             ? value.selectedPreset
             : DEFAULT_PLAYBACK_SETTINGS.selectedPreset,
         selectedReverb: REVERB_OPTIONS.includes(value.selectedReverb) ? value.selectedReverb : DEFAULT_PLAYBACK_SETTINGS.selectedReverb,
-        preamp: Number.isFinite(value.preamp) ? clamp(value.preamp, -1, 1) : DEFAULT_PLAYBACK_SETTINGS.preamp,
-        bassBoost: Number.isFinite(value.bassBoost) ? clamp(value.bassBoost, -1, 1) : DEFAULT_PLAYBACK_SETTINGS.bassBoost,
+        preamp: Number.isFinite(value.preamp) ? Math.round(clamp(value.preamp, -1, 1) * 12) / 12 : DEFAULT_PLAYBACK_SETTINGS.preamp,
+        bassBoost: Number.isFinite(value.bassBoost) ? Math.round(clamp(value.bassBoost, -1, 1) * 12) / 12 : DEFAULT_PLAYBACK_SETTINGS.bassBoost,
     };
 }
 
 export async function loadPlaybackSettings() {
     try {
-        const storedSettings = await AsyncStorage.getItem(PLAYBACK_SETTINGS_KEY);
-        return storedSettings ? normalizeSettings(JSON.parse(storedSettings)) : DEFAULT_PLAYBACK_SETTINGS;
+        const entries = await AsyncStorage.multiGet([PLAYBACK_SETTINGS_KEY, AUDIO_DEFAULTS_MIGRATION_KEY]);
+        const storedSettings = entries.find(([key]) => key === PLAYBACK_SETTINGS_KEY)?.[1];
+        const audioDefaultsMigration = entries.find(([key]) => key === AUDIO_DEFAULTS_MIGRATION_KEY)?.[1];
+        const settings = storedSettings ? normalizeSettings(JSON.parse(storedSettings)) : DEFAULT_PLAYBACK_SETTINGS;
+
+        if (audioDefaultsMigration !== '1') {
+            const migratedSettings = {
+                ...settings,
+                equalizerEnabled: false,
+                selectedReverb: 'Off',
+            };
+            await AsyncStorage.multiSet([
+                [PLAYBACK_SETTINGS_KEY, JSON.stringify(migratedSettings)],
+                [AUDIO_DEFAULTS_MIGRATION_KEY, '1'],
+            ]);
+            return migratedSettings;
+        }
+
+        return settings;
     } catch {
         return DEFAULT_PLAYBACK_SETTINGS;
     }
