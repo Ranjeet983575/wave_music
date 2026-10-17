@@ -45,6 +45,7 @@ export default function LoadingScreen() {
                 <View style={styles.loadingDot} />
                 <Text style={styles.loadingText}>Tuning your library</Text>
             </View>
+            <Text style={styles.developerCredit}>Developed by ranjeet Kumar Prajapati</Text>
         </View>
     );
 }
@@ -89,4 +90,5 @@ const styles = StyleSheet.create({
     loadingRow: { position: 'absolute', bottom: 74, flexDirection: 'row', alignItems: 'center', gap: 10 },
     loadingDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.green },
     loadingText: { color: COLORS.muted, fontSize: 13 },
+    developerCredit: { position: 'absolute', bottom: 32, color: COLORS.muted, fontSize: 12 },
 });
