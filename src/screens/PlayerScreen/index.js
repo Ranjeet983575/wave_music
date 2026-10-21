@@ -537,6 +537,19 @@ export default function PlayerScreen() {
             album: activeTrack.album,
             artwork: activeTrack.artworkUri || undefined,
             duration: status.duration || undefined,
+        }).then(async () => {
+            if (Platform.OS !== 'ios') return;
+
+            try {
+                await Promise.all([
+                    PlaybackNotificationManager.enableControl('skipForward', false),
+                    PlaybackNotificationManager.enableControl('skipBackward', false),
+                    PlaybackNotificationManager.enableControl('nextTrack', true),
+                    PlaybackNotificationManager.enableControl('previousTrack', true),
+                ]);
+            } catch (notificationError) {
+                console.warn('Failed to configure lock-screen playback controls', notificationError);
+            }
         }).catch((notificationError) => {
             console.warn('Failed to update playback metadata', notificationError);
         });
