@@ -19,6 +19,9 @@
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false,
         "LSSupportsOpeningDocumentsInPlace": false,
+        "UIBackgroundModes": [
+          "audio"
+        ],
         "CFBundleDocumentTypes": [
           {
             "CFBundleTypeName": "Audio File",

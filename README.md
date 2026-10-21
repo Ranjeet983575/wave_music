@@ -121,6 +121,14 @@ To inspect the device logs in Xcode:
 - Select the iPhone
 - Open the device log
 
+### iPhone background playback
+
+Background playback is enabled for the iOS target and uses the playback audio
+session. The waveform animation pauses while the app is in the background to
+avoid unnecessary JavaScript CPU use. Install a newly built native app after
+changing native settings; an OTA JavaScript update cannot add the iOS Background
+Modes capability to an app already installed on the iPhone.
+
 ## Project status
 
 This version includes the runtime crash fix related to startup media scanning and native volume handling.

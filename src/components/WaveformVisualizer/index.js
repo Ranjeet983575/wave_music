@@ -1,14 +1,23 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, AppState, StyleSheet, View } from 'react-native';
 
 const BAR_COUNT = 37;
 const BASE_LEVELS = Array.from({ length: BAR_COUNT }, (_, index) => 0.18 + Math.abs(Math.sin(index * 0.73)) * 0.36);
 
 export default function WaveformVisualizer({ playing, accent }) {
     const levels = useRef(BASE_LEVELS.map((level) => new Animated.Value(level))).current;
+    const [appIsActive, setAppIsActive] = useState(AppState.currentState === 'active');
 
     useEffect(() => {
-        if (!playing) {
+        const subscription = AppState.addEventListener('change', (nextAppState) => {
+            setAppIsActive(nextAppState === 'active');
+        });
+
+        return () => subscription.remove();
+    }, []);
+
+    useEffect(() => {
+        if (!playing || !appIsActive) {
             levels.forEach((level, index) => {
                 level.stopAnimation();
                 level.setValue(BASE_LEVELS[index]);
@@ -37,7 +46,7 @@ export default function WaveformVisualizer({ playing, accent }) {
         });
 
         return () => animations.forEach((animation) => animation.stop());
-    }, [levels, playing]);
+    }, [appIsActive, levels, playing]);
 
     return (
         <View accessibilityElementsHidden importantForAccessibility="no" style={styles.container}>

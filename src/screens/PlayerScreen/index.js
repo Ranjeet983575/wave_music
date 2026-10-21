@@ -548,6 +548,15 @@ export default function PlayerScreen() {
             album: activeTrack.album,
             artwork: activeTrack.artworkUri || undefined,
             duration: status.duration || undefined,
+        }).catch((notificationError) => {
+            console.warn('Failed to update playback metadata', notificationError);
+        });
+    }, [activeTrack, status.duration]);
+
+    useEffect(() => {
+        if (!activeTrack) return;
+
+        PlaybackNotificationManager.show({
             elapsedTime: notificationElapsedTime,
             speed: status.playing ? advancedSettings.playbackRate : 0,
             state: status.playing ? 'playing' : 'paused',
@@ -558,7 +567,6 @@ export default function PlayerScreen() {
         activeTrack,
         advancedSettings.playbackRate,
         notificationElapsedTime,
-        status.duration,
         status.playing,
     ]);
 
