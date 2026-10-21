@@ -699,6 +699,8 @@ export default function PlayerScreen() {
                         onMore={() => showTrackOptions(item)}
                         favorite={favorites.includes(item.id)}
                         onFavorite={() => toggleFavorite(item)}
+                        isCurrentTrack={activeTrack?.id === item.id}
+                        isPlaying={status.playing}
                         stylesOverride={styles}
                         accentColor={C.green}
                         secondaryColor={C.secondary}
@@ -1461,8 +1463,12 @@ const styles = StyleSheet.create({
     trackListContent: { paddingHorizontal: 16, paddingBottom: 20 },
     trackRow: { minHeight: 76, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#1A201D', gap: 8 },
     trackMain: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 13, paddingVertical: 9 },
+    trackArtworkContainer: { width: 56, height: 56, position: 'relative' },
     trackText: { flex: 1, minWidth: 0 },
     trackTitle: { color: C.text, fontSize: 14, fontWeight: '600' },
+    trackPlayingIndicator: { position: 'absolute', right: 3, bottom: 3, width: 22, height: 18, borderRadius: 7, backgroundColor: '#0A0C0B', alignItems: 'center', justifyContent: 'center' },
+    trackPlayingBars: { height: 13, flexDirection: 'row', alignItems: 'center', gap: 2 },
+    trackPlayingBar: { width: 2, height: 7, borderRadius: 1 },
     trackSubtitle: { color: C.secondary, fontSize: 11, marginTop: 5 },
     trackMeta: { flexDirection: 'row', alignItems: 'center', gap: 1 },
     trackDuration: { color: C.dim, fontSize: 11, width: 38, textAlign: 'right' },
