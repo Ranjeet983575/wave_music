@@ -76,6 +76,7 @@ export default function PlayerScreen() {
     const [volumePreview, setVolumePreview] = useState(null);
     const [volumeBarWidth, setVolumeBarWidth] = useState(1);
     const [trackOptionsTrack, setTrackOptionsTrack] = useState(null);
+    const [transferModalMode, setTransferModalMode] = useState(null);
     const [searchOpen, setSearchOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [selectedPlaylist, setSelectedPlaylist] = useState(null);
@@ -107,6 +108,7 @@ export default function PlayerScreen() {
     const audioPlayerRef = useRef(null);
     const notificationActionRef = useRef(null);
     const pendingTrackShareRef = useRef(null);
+    const pendingTransferActionRef = useRef(null);
     const incomingAudioUrisRef = useRef(new Set());
     const artworkPanResponder = useMemo(() => PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) => (
@@ -394,33 +396,18 @@ export default function PlayerScreen() {
     }
 
     function handleTransferChoice() {
-        const trackOptions = tracks.length ? tracks : [];
+        setTransferModalMode('choose');
+    }
 
-        Alert.alert(
-            'Transfer audio',
-            'Choose how you want to move music.',
-            [
-                { text: 'Receive', onPress: importMusicFiles },
-                {
-                    text: 'Send', onPress: () => {
-                        if (!trackOptions.length) {
-                            Alert.alert('No music to send', 'Import a track first, then choose Send.');
-                            return;
-                        }
+    function handleTransferModalDismiss() {
+        const action = pendingTransferActionRef.current;
+        if (!action) return;
 
-                        const items = trackOptions.map((track) => ({
-                            text: track.title || 'Track',
-                            onPress: () => shareTrack(track),
-                        }));
-                        Alert.alert('Select a track to send', '', [
-                            ...items,
-                            { text: 'Cancel', style: 'cancel' },
-                        ]);
-                    }
-                },
-                { text: 'Cancel', style: 'cancel' },
-            ],
-        );
+        pendingTransferActionRef.current = null;
+        InteractionManager.runAfterInteractions(() => {
+            if (action.type === 'receive') importMusicFiles();
+            else shareTrack(action.track);
+        });
     }
 
     const filteredTracks = useMemo(() => {
@@ -1419,6 +1406,92 @@ export default function PlayerScreen() {
             </Modal>
             <Modal
                 transparent
+                visible={!!transferModalMode}
+                animationType="fade"
+                onRequestClose={() => setTransferModalMode(null)}
+                onDismiss={handleTransferModalDismiss}
+            >
+                <View style={styles.modalBackdrop}>
+                    <View style={styles.trackOptionsModal}>
+                        <Text style={styles.trackOptionsTitle}>
+                            {transferModalMode === 'tracks' ? 'Choose a track' : 'Share & receive'}
+                        </Text>
+                        <Text style={styles.trackOptionsSubtitle}>
+                            {transferModalMode === 'tracks'
+                                ? 'Select music to share from your library.'
+                                : 'Send a track or receive shared audio.'}
+                        </Text>
+                        {transferModalMode === 'tracks' ? (
+                            tracks.length ? (
+                                <ScrollView style={styles.trackOptionsList}>
+                                    {tracks.map((track) => (
+                                        <Pressable
+                                            key={track.id}
+                                            accessibilityRole="button"
+                                            accessibilityLabel={`Share ${track.title || 'Track'}`}
+                                            onPress={() => {
+                                                pendingTransferActionRef.current = { type: 'share', track };
+                                                setTransferModalMode(null);
+                                            }}
+                                            style={({ pressed }) => [styles.trackOption, pressed && styles.pressed]}
+                                        >
+                                            <View style={styles.trackOptionIcon}>
+                                                <Ionicons name="musical-notes-outline" size={19} color={C.green} />
+                                            </View>
+                                            <View style={styles.transferTrackInfo}>
+                                                <Text numberOfLines={1} style={styles.queueTrackTitle}>{track.title || 'Track'}</Text>
+                                                <Text numberOfLines={1} style={styles.queueTrackArtist}>{track.artist || 'Unknown artist'}</Text>
+                                            </View>
+                                            <Ionicons name="share-social-outline" size={17} color={C.dim} />
+                                        </Pressable>
+                                    ))}
+                                </ScrollView>
+                            ) : (
+                                <View style={styles.transferEmpty}>
+                                    <Ionicons name="musical-notes-outline" size={25} color={C.dim} />
+                                    <Text style={styles.queueEmpty}>Import a track first, then choose Send.</Text>
+                                </View>
+                            )
+                        ) : (
+                            <View style={styles.transferChoices}>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() => {
+                                        pendingTransferActionRef.current = { type: 'receive' };
+                                        setTransferModalMode(null);
+                                    }}
+                                    style={({ pressed }) => [styles.trackOption, pressed && styles.pressed]}
+                                >
+                                    <View style={styles.trackOptionIcon}>
+                                        <Ionicons name="download-outline" size={19} color={C.green} />
+                                    </View>
+                                    <Text style={styles.trackOptionText}>Receive audio</Text>
+                                    <Ionicons name="chevron-forward" size={16} color={C.dim} />
+                                </Pressable>
+                                <Pressable
+                                    accessibilityRole="button"
+                                    onPress={() => setTransferModalMode('tracks')}
+                                    style={({ pressed }) => [styles.trackOption, pressed && styles.pressed]}
+                                >
+                                    <View style={styles.trackOptionIcon}>
+                                        <Ionicons name="share-social-outline" size={19} color={C.green} />
+                                    </View>
+                                    <Text style={styles.trackOptionText}>Send a track</Text>
+                                    <Ionicons name="chevron-forward" size={16} color={C.dim} />
+                                </Pressable>
+                            </View>
+                        )}
+                        <Pressable
+                            onPress={() => setTransferModalMode(transferModalMode === 'tracks' ? 'choose' : null)}
+                            style={styles.trackOptionsCancel}
+                        >
+                            <Text style={styles.trackOptionsCancelText}>{transferModalMode === 'tracks' ? 'Back' : 'Cancel'}</Text>
+                        </Pressable>
+                    </View>
+                </View>
+            </Modal>
+            <Modal
+                transparent
                 visible={!!trackOptionsTrack}
                 animationType="fade"
                 onRequestClose={() => setTrackOptionsTrack(null)}
@@ -1655,6 +1728,9 @@ const styles = StyleSheet.create({
     trackOptionIconDestructive: { backgroundColor: '#39211F' },
     trackOptionText: { flex: 1, color: C.text, fontSize: 14, fontWeight: '600' },
     trackOptionDestructive: { color: C.danger },
+    transferChoices: { gap: 8 },
+    transferTrackInfo: { flex: 1 },
+    transferEmpty: { minHeight: 100, alignItems: 'center', justifyContent: 'center', padding: 16, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
     trackOptionsCancel: { minHeight: 45, marginTop: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#252D28' },
     trackOptionsCancelText: { color: C.text, fontSize: 14, fontWeight: '600' },
     modalEyebrow: { color: C.green, fontSize: 10, fontWeight: '700', letterSpacing: 1.5 },
