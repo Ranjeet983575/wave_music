@@ -6,7 +6,7 @@ import { parseBuffer } from 'music-metadata';
 const PLAYLISTS_KEY = '@wave-music/playlists-v1';
 const FAVORITES_KEY = '@wave-music/favorites-v1';
 const IMPORTED_TRACKS_KEY = '@wave-music/imported-tracks-v1';
-const ARTWORK_EXTRACTION_VERSION = 6;
+const ARTWORK_EXTRACTION_VERSION = 7;
 
 function titleFromFilename(filename) {
     const safeName = typeof filename === 'string' ? filename : '';
@@ -85,34 +85,29 @@ function artworkKeysForMusicFile(musicFile) {
 }
 
 async function extractArtworkUri(audioUri, artworkName) {
-    try {
-        const audioFile = new File(audioUri);
-        const audioBytes = await audioFile.bytes();
-        const metadata = await parseBuffer(audioBytes);
-        const pictures = metadata.common.picture || [];
-        const picture = pictures.find((item) => /front|cover/i.test(`${item.type || ''} ${item.description || ''}`)) || pictures[0];
-        if (!picture?.data?.length || !picture.format?.startsWith('image/')) {
-            console.warn(`[WaveMusicArtwork] No embedded image found; bytes=${audioBytes.length}, pictures=${pictures.length}`);
-            return null;
-        }
-
-        const artworkDirectory = new Directory(Paths.document, 'WaveMusicArtwork');
-        if (!artworkDirectory.exists) {
-            artworkDirectory.create({ intermediates: true, idempotent: true });
-        }
-
-        const extension = picture.format.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
-        const artworkFile = new File(artworkDirectory, `${artworkName}.${extension}`);
-        artworkFile.create({ intermediates: true, overwrite: true });
-        artworkFile.write(picture.data);
-        const savedArtwork = await artworkFile.bytes();
-        if (savedArtwork.length !== picture.data.length) throw new Error('Artwork file was not fully saved');
-        console.warn(`[WaveMusicArtwork] Saved image; bytes=${picture.data.length}`);
-        return artworkFile.uri;
-    } catch (error) {
-        console.warn('Could not extract embedded audio artwork', error);
+    const audioFile = new File(audioUri);
+    const audioBytes = await audioFile.bytes();
+    const metadata = await parseBuffer(audioBytes, { path: audioUri });
+    const pictures = metadata.common.picture || [];
+    const picture = pictures.find((item) => /front|cover/i.test(`${item.type || ''} ${item.description || ''}`)) || pictures[0];
+    if (!picture?.data?.length || !picture.format?.startsWith('image/')) {
+        console.warn(`[WaveMusicArtwork] No embedded image found; bytes=${audioBytes.length}, pictures=${pictures.length}`);
         return null;
     }
+
+    const artworkDirectory = new Directory(Paths.document, 'WaveMusicArtwork');
+    if (!artworkDirectory.exists) {
+        artworkDirectory.create({ intermediates: true, idempotent: true });
+    }
+
+    const extension = picture.format.split('/')[1]?.replace(/[^a-zA-Z0-9]/g, '') || 'jpg';
+    const artworkFile = new File(artworkDirectory, `${artworkName}.${extension}`);
+    artworkFile.create({ intermediates: true, overwrite: true });
+    artworkFile.write(picture.data);
+    const savedArtwork = await artworkFile.bytes();
+    if (savedArtwork.length !== picture.data.length) throw new Error('Artwork file was not fully saved');
+    console.warn(`[WaveMusicArtwork] Saved image; bytes=${picture.data.length}`);
+    return artworkFile.uri;
 }
 
 export async function loadImportedTracks() {
@@ -135,8 +130,12 @@ export async function loadImportedTracks() {
                 if (!file.exists) continue;
 
                 if (prepared.artworkExtractionVersion !== ARTWORK_EXTRACTION_VERSION) {
-                    prepared.artworkUri = await extractArtworkUri(prepared.uri, file.name);
-                    prepared.artworkExtractionVersion = ARTWORK_EXTRACTION_VERSION;
+                    try {
+                        prepared.artworkUri = await extractArtworkUri(prepared.uri, file.name);
+                        prepared.artworkExtractionVersion = ARTWORK_EXTRACTION_VERSION;
+                    } catch (error) {
+                        console.warn(`[WaveMusicArtwork] Extraction failed for ${prepared.filename}; will retry next launch`, error);
+                    }
                 }
             }
 
@@ -184,11 +183,20 @@ export async function importAudioAssets(assets, source = 'files') {
             await sourceFile.copy(destinationFile, { overwrite: true });
             if (!destinationFile.exists) throw new Error('Copied file was not created.');
 
+            let artworkUri = null;
+            let artworkExtractionVersion;
+            try {
+                artworkUri = await extractArtworkUri(destinationFile.uri, destinationFile.name);
+                artworkExtractionVersion = ARTWORK_EXTRACTION_VERSION;
+            } catch (error) {
+                console.warn(`[WaveMusicArtwork] Extraction failed for ${filename}; will retry next launch`, error);
+            }
+
             const track = {
                 id: `import:${destinationFile.uri}`,
                 uri: destinationFile.uri,
-                artworkUri: await extractArtworkUri(destinationFile.uri, destinationFile.name),
-                artworkExtractionVersion: ARTWORK_EXTRACTION_VERSION,
+                artworkUri,
+                artworkExtractionVersion,
                 filename,
                 size,
                 title: titleFromFilename(filename),
