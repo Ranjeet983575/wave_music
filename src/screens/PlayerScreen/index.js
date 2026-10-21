@@ -4,6 +4,7 @@ import {
     Alert,
     FlatList,
     Image,
+    InteractionManager,
     Linking,
     Modal,
     PanResponder,
@@ -105,6 +106,7 @@ export default function PlayerScreen() {
     const [bassBoostWidth, setBassBoostWidth] = useState(1);
     const audioPlayerRef = useRef(null);
     const notificationActionRef = useRef(null);
+    const pendingTrackShareRef = useRef(null);
     const incomingAudioUrisRef = useRef(new Set());
     const artworkPanResponder = useMemo(() => PanResponder.create({
         onMoveShouldSetPanResponder: (_, gesture) => (
@@ -604,13 +606,27 @@ export default function PlayerScreen() {
         setTrackOptionsTrack(track);
     }
 
+    function handleTrackOptionsDismiss() {
+        const track = pendingTrackShareRef.current;
+        if (!track) return;
+
+        pendingTrackShareRef.current = null;
+        InteractionManager.runAfterInteractions(() => shareTrack(track));
+    }
+
     function getTrackOptionItems(track) {
         const options = [
-            { text: 'Play next', onPress: () => playTrack(track, [track, ...tracks.filter((item) => item.id !== track.id)]) },
-            { text: favorites.includes(track.id) ? 'Remove from favorites' : 'Add to favorites', onPress: () => toggleFavorite(track) },
+            { text: 'Play next', icon: 'play-skip-forward-outline', onPress: () => playTrack(track, [track, ...tracks.filter((item) => item.id !== track.id)]) },
+            { text: 'Share track', icon: 'share-social-outline', shareAfterDismiss: true, onPress: () => shareTrack(track) },
+            {
+                text: favorites.includes(track.id) ? 'Remove from favorites' : 'Add to favorites',
+                icon: favorites.includes(track.id) ? 'heart-dislike-outline' : 'heart-outline',
+                onPress: () => toggleFavorite(track),
+            },
         ];
         if (track.source === 'files' || track.id?.startsWith('import:')) options.push({
             text: 'Remove from imports',
+            icon: 'trash-outline',
             destructive: true,
             onPress: async () => {
                 await removeImportedTrack(track.id);
@@ -623,6 +639,7 @@ export default function PlayerScreen() {
         });
         playlists.forEach((playlist) => options.push({
             text: `Add to ${playlist.name}`,
+            icon: 'add-circle-outline',
             onPress: () => addTrackToPlaylist(track, playlist),
         }));
         return options;
@@ -1400,7 +1417,13 @@ export default function PlayerScreen() {
                     </View>
                 </View>
             </Modal>
-            <Modal transparent visible={!!trackOptionsTrack} animationType="fade" onRequestClose={() => setTrackOptionsTrack(null)}>
+            <Modal
+                transparent
+                visible={!!trackOptionsTrack}
+                animationType="fade"
+                onRequestClose={() => setTrackOptionsTrack(null)}
+                onDismiss={handleTrackOptionsDismiss}
+            >
                 <View style={styles.modalBackdrop}>
                     <View style={styles.trackOptionsModal}>
                         <Text numberOfLines={1} style={styles.trackOptionsTitle}>{trackOptionsTrack?.title}</Text>
@@ -1410,12 +1433,23 @@ export default function PlayerScreen() {
                                 <Pressable
                                     key={option.text}
                                     onPress={() => {
+                                        if (option.shareAfterDismiss) {
+                                            pendingTrackShareRef.current = trackOptionsTrack;
+                                        }
                                         setTrackOptionsTrack(null);
-                                        option.onPress();
+                                        if (!option.shareAfterDismiss) option.onPress();
                                     }}
                                     style={({ pressed }) => [styles.trackOption, pressed && styles.pressed]}
                                 >
+                                    <View style={[styles.trackOptionIcon, option.destructive && styles.trackOptionIconDestructive]}>
+                                        <Ionicons
+                                            name={option.icon}
+                                            size={19}
+                                            color={option.destructive ? C.danger : C.green}
+                                        />
+                                    </View>
                                     <Text style={[styles.trackOptionText, option.destructive && styles.trackOptionDestructive]}>{option.text}</Text>
+                                    <Ionicons name="chevron-forward" size={16} color={option.destructive ? C.danger : C.dim} />
                                 </Pressable>
                             )) : null}
                         </ScrollView>
@@ -1612,12 +1646,14 @@ const styles = StyleSheet.create({
     volumeValue: { color: C.secondary, fontSize: 12, textAlign: 'center', marginTop: 4 },
     modalBackdrop: { flex: 1, justifyContent: 'center', padding: 24, backgroundColor: '#000000B8' },
     createModal: { padding: 21, borderRadius: 20, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
-    trackOptionsModal: { maxHeight: '78%', padding: 20, borderRadius: 20, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
+    trackOptionsModal: { maxHeight: '78%', padding: 20, borderRadius: 22, backgroundColor: C.surfaceRaised, borderWidth: 1, borderColor: C.border },
     trackOptionsTitle: { color: C.text, fontSize: 18, fontWeight: '700' },
-    trackOptionsSubtitle: { color: C.secondary, fontSize: 12, marginTop: 5, marginBottom: 10 },
-    trackOptionsList: { flexGrow: 0 },
-    trackOption: { minHeight: 48, justifyContent: 'center', borderTopWidth: 1, borderTopColor: C.border },
-    trackOptionText: { color: C.text, fontSize: 14 },
+    trackOptionsSubtitle: { color: C.secondary, fontSize: 12, marginTop: 5, marginBottom: 14 },
+    trackOptionsList: { flexGrow: 0, gap: 8 },
+    trackOption: { minHeight: 54, flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 10, borderRadius: 14, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border },
+    trackOptionIcon: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', borderRadius: 11, backgroundColor: '#1D2A24' },
+    trackOptionIconDestructive: { backgroundColor: '#39211F' },
+    trackOptionText: { flex: 1, color: C.text, fontSize: 14, fontWeight: '600' },
     trackOptionDestructive: { color: C.danger },
     trackOptionsCancel: { minHeight: 45, marginTop: 9, alignItems: 'center', justifyContent: 'center', borderRadius: 13, backgroundColor: '#252D28' },
     trackOptionsCancelText: { color: C.text, fontSize: 14, fontWeight: '600' },
@@ -1731,8 +1767,11 @@ function createAppearanceStyles(palette, isLightTheme) {
             trackOptionsModal: { backgroundColor: palette.surface, borderColor: palette.border },
             trackOptionsTitle: { color: palette.text },
             trackOptionsSubtitle: { color: palette.secondary },
-            trackOption: { borderTopColor: palette.border },
+            trackOption: { backgroundColor: palette.surface, borderColor: palette.border },
+            trackOptionIcon: { backgroundColor: palette.surfaceRaised },
+            trackOptionIconDestructive: { backgroundColor: `${palette.danger}20` },
             trackOptionText: { color: palette.text },
+            trackOptionDestructive: { color: palette.danger },
             trackOptionsCancel: { backgroundColor: palette.surfaceRaised },
             trackOptionsCancelText: { color: palette.text },
             modalTitle: { color: palette.text },
